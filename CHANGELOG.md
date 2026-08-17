@@ -4,6 +4,12 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.2
+
+- README badges and expanded usage docs.
+- TUI headline label is now estimated weekly API value.
+- New quota epochs no longer inherit the previous epoch's confidence or graph.
+
 ## 1.0.1
 
 ### Added

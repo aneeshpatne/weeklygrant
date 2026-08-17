@@ -1,6 +1,6 @@
 {
   "name": "weeklygrant",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Estimate the API-equivalent value of a weekly Codex grant from local session logs.",
   "bin": {
     "weeklygrant": "./dist/bin/cli.js"
