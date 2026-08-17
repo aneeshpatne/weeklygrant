@@ -4,6 +4,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.1
+
 ### Added
 
 - Local Codex session scanning and weekly API-equivalent grant estimation.
@@ -13,6 +15,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Privacy, security, contribution, disclaimer, and non-affiliation documentation.
 - Node.js 22 CI, syntax checking, tests, and package validation.
 - TypeScript source, typed tests, declaration output, and an ESM build pipeline.
+- npm repository metadata and `npx weeklygrant` as the no-install entry point.
 
 ## 1.0.0
 
