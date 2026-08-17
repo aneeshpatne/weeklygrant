@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildModelUsageSeries,
   estimateGrantFromLogs,
   loadRateCards,
   priceTokens,
@@ -156,5 +157,16 @@ test("summarizes token usage and API value by model", () => {
       pricedEvents: 0,
       pendingEvents: 1,
     },
+  ]);
+});
+
+test("builds cumulative per-model usage series", () => {
+  const result = buildModelUsageSeries([
+    { timestampMs: 2_000, model: "gpt-5.2-codex", uncachedInput: 20, cachedInput: 5, billedOutput: 2, eligible: true, costUsd: 0.02 },
+    { timestampMs: 1_000, model: "gpt-5.2-codex", uncachedInput: 10, cachedInput: 3, billedOutput: 1, eligible: true, costUsd: 0.01 },
+  ]);
+  assert.deepEqual(result.map(({ timestampMs, totalTokens, apiValueUsd }) => ({ timestampMs, totalTokens, apiValueUsd })), [
+    { timestampMs: 1_000, totalTokens: 14, apiValueUsd: 0.01 },
+    { timestampMs: 2_000, totalTokens: 41, apiValueUsd: 0.03 },
   ]);
 });

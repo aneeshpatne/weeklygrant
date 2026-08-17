@@ -155,6 +155,21 @@ export function summarizeModelUsage(events) {
   return [...models.values()].sort((a, b) => b.apiValueUsd - a.apiValueUsd || b.totalTokens - a.totalTokens || a.model.localeCompare(b.model));
 }
 
+export function buildModelUsageSeries(events) {
+  const totals = new Map();
+  return [...events].sort((a, b) => a.timestampMs - b.timestampMs).map((event) => {
+    const model = normalizeModel(event.model) || "unknown";
+    const current = totals.get(model) || { uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0, totalTokens: 0, apiValueUsd: 0 };
+    current.uncachedInputTokens += number(event.uncachedInput);
+    current.cachedInputTokens += number(event.cachedInput);
+    current.outputTokens += number(event.billedOutput);
+    current.totalTokens = current.uncachedInputTokens + current.cachedInputTokens + current.outputTokens;
+    if (event.eligible) current.apiValueUsd += number(event.costUsd);
+    totals.set(model, current);
+    return { timestampMs: event.timestampMs, model, ...current };
+  });
+}
+
 function weeklyObservation(rateLimits, timestamp, sessionId) {
   if (!rateLimits || typeof rateLimits !== "object") return null;
   const candidates = [rateLimits.primary, rateLimits.secondary].filter(Boolean)
@@ -421,5 +436,6 @@ export async function estimateCodexGrant(options: EstimateOptions = {}) {
     codexHome: home,
     filesScanned: files.length,
     modelUsage: summarizeModelUsage(events),
+    modelUsageSeries: buildModelUsageSeries(events),
   };
 }
