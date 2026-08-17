@@ -18,14 +18,16 @@ weeklygrant/
 
 ## Run
 
+No install. Node.js 22 or newer:
+
 ```bash
-weeklygrant                         # estimate from ~/.codex
-weeklygrant --json                  # full machine-readable report
-weeklygrant --home /path/to/.codex  # scan another Codex home
-weeklygrant --days 30               # limit files by modification time
-weeklygrant --no-network            # use bundled prices; make no requests
-weeklygrant --json --redact         # hide the local Codex home path
-weeklygrant version
+npx weeklygrant                         # estimate from ~/.codex
+npx weeklygrant --json                  # full machine-readable report
+npx weeklygrant --home /path/to/.codex  # scan another Codex home
+npx weeklygrant --days 30               # limit files by modification time
+npx weeklygrant --no-network            # use bundled prices; make no requests
+npx weeklygrant --json --redact         # hide the local Codex home path
+npx weeklygrant version
 ```
 
 The headline is a local planning estimate: token deltas from Codex session JSONL
@@ -65,12 +67,3 @@ this estimate alone.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions and
 [CHANGELOG.md](CHANGELOG.md) for release history.
-
-Link the command locally with:
-
-```bash
-npm ci
-npm run build
-npm link
-weeklygrant
-```
