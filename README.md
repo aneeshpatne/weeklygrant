@@ -188,7 +188,7 @@ npm run dev -- --home /path/to/synthetic/.codex --no-network
 npm start                               # build, then node dist/bin/cli.js
 ```
 
-`CODEX_HOME` overrides the default home when `--home` is omitted. In the estimate TUI, `←`/`→` change graphs and `↑`/`↓` change the time range. In the usage TUI, `↑`/`↓` select a model, `←`/`→` change the token/value metric, and `[`/`]` change the time range. `q` or Escape quits either dashboard. When output is piped, `weeklygrant usage` prints a compact table instead.
+`CODEX_HOME` overrides the default home when `--home` is omitted. In the estimate TUI, `←`/`→` change graphs and `↑`/`↓` change the time range. In the usage TUI, `↑`/`↓` select a model, `←`/`→` change the token/value metric, and `-`/`+` change the time range. `q` or Escape quits either dashboard. When output is piped, `weeklygrant usage` prints a compact table instead.
 
 > [!IMPORTANT]
 > Unless you pass `--no-network`, weeklygrant performs a GET to `https://models.dev/api.json`. That request does not include session contents. `--json` includes the resolved Codex home path; use `--redact` before sharing output. Session files can contain prompts even though this tool only reads accounting fields — see [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).

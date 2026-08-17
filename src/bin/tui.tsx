@@ -176,8 +176,8 @@ function UsageDashboard({ report }) {
     if (key.rightArrow) setMetricIndex((value) => (value + 1) % USAGE_METRICS.length);
     if (key.upArrow && models.length) setModelIndex((value) => (value + models.length - 1) % models.length);
     if (key.downArrow && models.length) setModelIndex((value) => (value + 1) % models.length);
-    if (input === "[") setRangeIndex((value) => (value + RANGES.length - 1) % RANGES.length);
-    if (input === "]") setRangeIndex((value) => (value + 1) % RANGES.length);
+    if (input === "-") setRangeIndex((value) => Math.max(0, value - 1));
+    if (input === "+" || input === "=") setRangeIndex((value) => Math.min(RANGES.length - 1, value + 1));
   });
   const [metricTitle, field, suffix] = USAGE_METRICS[metricIndex];
   const [rangeName, rangeMs] = RANGES[rangeIndex];
@@ -220,7 +220,7 @@ function UsageDashboard({ report }) {
     h(Box, { marginTop: 1 },
       h(Text, { color: "cyan" }, "↑/↓"), h(Text, null, " model  "),
       h(Text, { color: "cyan" }, "←/→"), h(Text, null, " metric  "),
-      h(Text, { color: "cyan" }, "[/]"), h(Text, null, " range  "),
+      h(Text, { color: "cyan" }, "-/+"), h(Text, null, " range  "),
       h(Text, { color: "cyan" }, "q"), h(Text, null, " quit"),
     ),
     h(Text, { dimColor: true }, "API-equivalent planning value — not a Codex bill or credit balance."),
