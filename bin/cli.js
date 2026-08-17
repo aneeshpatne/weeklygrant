@@ -16,9 +16,11 @@ Commands:
   version  Print the CLI version
 
 Options:
-  --json         Print the complete report as JSON
-  --home <path>  Use a specific Codex home (default: CODEX_HOME or ~/.codex)
-  --days <n>     Only scan session files modified in the last n days
+  --json          Print the complete report as JSON
+  --home <path>   Use a specific Codex home (default: CODEX_HOME or ~/.codex)
+  --days <n>      Only scan session files modified in the last n days
+  --no-network    Do not fetch models.dev; use bundled pricing only
+  --redact        Hide local filesystem paths in output
 `);
 }
 
@@ -53,9 +55,16 @@ async function main() {
   const daysValue = option("--days");
   const days = daysValue === undefined ? Infinity : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
-  const report = await estimateCodexGrant({ home: option("--home"), days });
+  const estimateOptions = { home: option("--home"), days, noNetwork: args.includes("--no-network") };
+  if (process.stdout.isTTY && !args.includes("--json")) {
+    const { runTui } = await import("./tui.mjs");
+    await runTui(estimateOptions);
+    return;
+  }
+  const report = await estimateCodexGrant(estimateOptions);
   if (args.includes("--json")) {
-    console.log(JSON.stringify(report, null, 2));
+    const output = args.includes("--redact") ? { ...report, codexHome: "[redacted]" } : report;
+    console.log(JSON.stringify(output, null, 2));
     return;
   }
   console.log(money(report.headlineUsd));
@@ -63,7 +72,7 @@ async function main() {
   if (report.weeklyUsedPercent != null) console.log(`Quota used: ${report.weeklyUsedPercent.toFixed(1)}%`);
   console.log(`Observed spend: ${money(report.observedTokenCostUsd)} · Current signal: ${money(report.rawUsd)}`);
   console.log(`Measurements: ${report.validPairs} valid pairs, ${report.pricedEvents} priced events, ${report.pendingEvents} pending events`);
-  if (!report.filesScanned) console.log(`No Codex JSONL sessions found under ${report.codexHome}`);
+  if (!report.filesScanned) console.log(args.includes("--redact") ? "No Codex JSONL sessions found" : `No Codex JSONL sessions found under ${report.codexHome}`);
 }
 
 main().catch((error) => {
