@@ -2,11 +2,16 @@
 
 ```
 weeklygrant/
-├─ bin/
-│  ├─ cli.js
-│  └─ tui.mjs
-├─ lib/
-│  └─ codex-grant.js
+├─ src/
+│  ├─ bin/
+│  │  ├─ cli.ts
+│  │  ├─ estimate-worker.ts
+│  │  └─ tui.tsx
+│  └─ lib/
+│     └─ codex-grant.ts
+├─ test/
+│  └─ codex-grant.test.ts
+├─ tsconfig.json
 ├─ package.json
 └─ README.md
 ```
@@ -14,13 +19,13 @@ weeklygrant/
 ## Run
 
 ```bash
-node bin/cli.js                         # estimate from ~/.codex
-node bin/cli.js --json                  # full machine-readable report
-node bin/cli.js --home /path/to/.codex  # scan another Codex home
-node bin/cli.js --days 30               # limit files by modification time
-node bin/cli.js --no-network            # use bundled prices; make no requests
-node bin/cli.js --json --redact          # hide the local Codex home path
-node bin/cli.js version
+weeklygrant                         # estimate from ~/.codex
+weeklygrant --json                  # full machine-readable report
+weeklygrant --home /path/to/.codex  # scan another Codex home
+weeklygrant --days 30               # limit files by modification time
+weeklygrant --no-network            # use bundled prices; make no requests
+weeklygrant --json --redact         # hide the local Codex home path
+weeklygrant version
 ```
 
 The headline is a local planning estimate: token deltas from Codex session JSONL
@@ -64,6 +69,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development instructions and
 Link the command locally with:
 
 ```bash
+npm ci
+npm run build
 npm link
 weeklygrant
 ```

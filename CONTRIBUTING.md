@@ -11,7 +11,8 @@ Requirements: Node.js 22 or newer and npm or Bun.
 npm ci
 npm test
 npm run check
-node bin/cli.js --home /path/to/synthetic/.codex --no-network
+npm run build
+npm run dev -- --home /path/to/synthetic/.codex --no-network
 ```
 
 Add tests for estimator changes, especially pricing, reset detection, interval
@@ -19,5 +20,6 @@ pairing, and privacy-sensitive output. Use synthetic JSONL fixtures only. Keep
 `--json` stable and non-interactive, and ensure the TUI remains usable in narrow
 terminals.
 
-Before submitting a change, run tests, syntax checks, and `npm pack --dry-run`.
+Before submitting a change, run tests, type checks, a build, and
+`npm pack --dry-run`.
 Explain user-visible changes and update `CHANGELOG.md` when appropriate.

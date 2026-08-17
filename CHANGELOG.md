@@ -12,6 +12,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Pricing-source and rate-card-mode reporting.
 - Privacy, security, contribution, disclaimer, and non-affiliation documentation.
 - Node.js 22 CI, syntax checking, tests, and package validation.
+- TypeScript source, typed tests, declaration output, and an ESM build pipeline.
 
 ## 1.0.0
 
