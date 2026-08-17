@@ -7,11 +7,18 @@ function printHelp() {
   console.log(`weeklygrant
 
 Usage:
-  weeklygrant [command]
+  weeklygrant [estimate] [options]
+  weeklygrant <command>
 
 Commands:
+  estimate  Estimate the API-equivalent value of the weekly Codex grant (default)
   help     Show this help
   version  Print the CLI version
+
+Options:
+  --json         Print the complete report as JSON
+  --home <path>  Use a specific Codex home (default: CODEX_HOME or ~/.codex)
+  --days <n>     Only scan session files modified in the last n days
 `);
 }
 
@@ -21,11 +28,45 @@ if (command === "version" || command === "-v" || command === "--version") {
   process.exit(0);
 }
 
-if (!command || command === "help" || command === "-h" || command === "--help") {
+if (command === "help" || command === "-h" || command === "--help") {
   printHelp();
   process.exit(0);
 }
 
-console.error(`Unknown command: ${command}`);
-printHelp();
-process.exit(1);
+if (command && command !== "estimate" && command !== "--json" && !command.startsWith("--")) {
+  console.error(`Unknown command: ${command}`);
+  printHelp();
+  process.exit(1);
+}
+
+function option(name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
+}
+
+function money(value) {
+  return value == null ? "Not enough data" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
+}
+
+async function main() {
+  const { estimateCodexGrant } = require("../lib/codex-grant");
+  const daysValue = option("--days");
+  const days = daysValue === undefined ? Infinity : Number(daysValue);
+  if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
+  const report = await estimateCodexGrant({ home: option("--home"), days });
+  if (args.includes("--json")) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  console.log(money(report.headlineUsd));
+  console.log(`${report.label} · ${report.confidence} confidence · based on ${report.coveragePoints.toFixed(1)} quota points`);
+  if (report.weeklyUsedPercent != null) console.log(`Quota used: ${report.weeklyUsedPercent.toFixed(1)}%`);
+  console.log(`Observed spend: ${money(report.observedTokenCostUsd)} · Current signal: ${money(report.rawUsd)}`);
+  console.log(`Measurements: ${report.validPairs} valid pairs, ${report.pricedEvents} priced events, ${report.pendingEvents} pending events`);
+  if (!report.filesScanned) console.log(`No Codex JSONL sessions found under ${report.codexHome}`);
+}
+
+main().catch((error) => {
+  console.error(`weeklygrant: ${error.message}`);
+  process.exitCode = 1;
+});
