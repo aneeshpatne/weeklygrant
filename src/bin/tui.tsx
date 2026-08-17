@@ -141,7 +141,7 @@ function Dashboard({ report }) {
       h(Text, { dimColor: true }, `${report.filesScanned} session files · ${report.algorithm}`),
     ),
     h(Box, { marginTop: 1, gap: 1, flexWrap: "wrap" },
-      h(Stat, { label: "Full weekly grant", value: usd(report.headlineUsd), color: "green" }),
+      h(Stat, { label: "Estimated weekly API value", value: usd(report.headlineUsd), color: "green" }),
       h(Stat, { label: "Confidence", value: report.confidence.toUpperCase(), color: confidenceColor }),
       h(Stat, { label: "Weekly quota", value: report.weeklyUsedPercent == null ? "—" : `${report.weeklyUsedPercent.toFixed(1)}% used`, color: "cyan" }),
       h(Stat, { label: "Resets", value: relativeTime(report.resetsAtMs) }),

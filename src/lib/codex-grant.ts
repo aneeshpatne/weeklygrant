@@ -281,7 +281,6 @@ function costInWindow(events, start, end, limitId) {
 export function estimateGrantFromLogs(events, observations) {
   const collapsed = collapseObservations(observations);
   const epochs = splitEpochs(collapsed);
-  let allValidPairs = 0;
   const series = [];
   let active = null;
   epochs.forEach((epoch, epochIndex) => {
@@ -307,7 +306,6 @@ export function estimateGrantFromLogs(events, observations) {
       if (decision === "valid") {
         rates.push({ value: weekUsd, weight: Math.max(0.5, percentDelta) });
         rawUsd = weekUsd;
-        allValidPairs += 1;
         const fitted = weightedMedian(rates.slice(-ESTIMATE_SAMPLE_COUNT)) ?? weekUsd;
         fittedValues.push(fitted);
         series.push({ timestampMs: current.timestampMs, epoch: epochIndex, kind: "quote", valueUsd: fitted, rawUsd: weekUsd, usedPercent: current.usedPercent, observedCostUsd: currentCost });
@@ -316,19 +314,19 @@ export function estimateGrantFromLogs(events, observations) {
       } else {
         const unmatchedJump = costDelta <= 0 && percentDelta >= MIN_PERCENT_DELTA;
         if (decision === "rejected" || unmatchedJump) { anchor = current; anchorCost = currentCost; }
-        const previous = series.at(-1);
+        const previous = series.findLast((point) => point.epoch === epochIndex);
         if (previous) series.push({ ...previous, timestampMs: current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: current.usedPercent, observedCostUsd: currentCost });
       }
     }
     active = {
-      epoch, rates, fittedValues, rawUsd,
+      epoch, rates, fittedValues, rawUsd, validPairs: rates.length,
       headlineUsd: weightedMedian(rates.slice(-ESTIMATE_SAMPLE_COUNT)) ?? rawUsd,
       coveragePoints: Math.max(0, epoch.at(-1).usedPercent - first.usedPercent),
       observedTokenCostUsd: costInWindow(events, first.timestampMs, Date.now(), first.limitId),
     };
   });
   const latest = active?.epoch.at(-1) ?? null;
-  const confidence = classifyConfidence(allValidPairs, active?.coveragePoints ?? 0, active?.fittedValues ?? []);
+  const confidence = classifyConfidence(active?.validPairs ?? 0, active?.coveragePoints ?? 0, active?.fittedValues ?? []);
   return {
     algorithm: WEEKLY_GRANT_VERSION,
     headlineUsd: active?.headlineUsd ?? null,
@@ -338,7 +336,7 @@ export function estimateGrantFromLogs(events, observations) {
     coveragePoints: active?.coveragePoints ?? 0,
     weeklyUsedPercent: latest?.usedPercent ?? null,
     observedTokenCostUsd: active?.observedTokenCostUsd ?? 0,
-    validPairs: allValidPairs,
+    validPairs: active?.validPairs ?? 0,
     pricedEvents: events.filter((event) => event.eligible).length,
     pendingEvents: events.filter((event) => !event.eligible).length,
     resetsAtMs: latest?.resetsAtMs ?? null,

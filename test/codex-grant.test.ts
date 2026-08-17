@@ -82,6 +82,46 @@ test("an unmatched usage jump does not collapse the estimate", () => {
   assert.equal(result.headlineUsd, 100);
 });
 
+test("a new epoch does not inherit confidence from the previous epoch", () => {
+  const result = estimateGrantFromLogs(
+    [
+      pricedEvent(1_500, 1),
+      pricedEvent(2_500, 1),
+      pricedEvent(3_500, 1),
+      pricedEvent(4_500, 1),
+      pricedEvent(5_500, 1),
+      pricedEvent(12_500, 20),
+    ],
+    [
+      observation(1_000, 75, 10_000),
+      observation(2_000, 76, 10_000),
+      observation(3_000, 77, 10_000),
+      observation(4_000, 78, 10_000),
+      observation(5_000, 79, 10_000),
+      observation(6_000, 80, 10_000),
+      observation(12_000, 0, 200_000),
+      observation(13_000, 20, 200_000),
+    ],
+  );
+  assert.equal(result.validPairs, 1);
+  assert.equal(result.confidence, "low");
+});
+
+test("a new epoch does not graph a stale estimate as a heartbeat", () => {
+  const result = estimateGrantFromLogs(
+    [pricedEvent(1_500, 0.42)],
+    [
+      observation(1_000, 80, 10_000),
+      observation(2_000, 81, 10_000),
+      observation(12_000, 5, 200_000),
+      observation(13_000, 6, 200_000),
+    ],
+  );
+  assert.equal(result.headlineUsd, null);
+  assert.equal(result.series.length, 1);
+  assert.equal(result.series[0].epoch, 0);
+});
+
 test("offline rate-card loading uses bundled official prices", async () => {
   const cards = await loadRateCards(null);
   assert.equal(cards["gpt-5.6-terra"].source, "official");
