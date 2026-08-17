@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.4
+
+- Usage TUI time range is now `-`/`+` instead of `[`/`]`.
+
 ## 1.0.3
 
 - Interactive `weeklygrant usage` dashboard with per-model token and API-value graphs.
