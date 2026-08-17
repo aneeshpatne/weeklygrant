@@ -8,7 +8,7 @@ reports free of real prompts, credentials, session logs, and personal data.
 Requirements: Node.js 22 or newer and npm or Bun.
 
 ```bash
-bun install
+npm ci
 npm test
 npm run check
 node bin/cli.js --home /path/to/synthetic/.codex --no-network
