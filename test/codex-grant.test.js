@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   estimateGrantFromLogs,
+  loadRateCards,
   priceTokens,
   splitEpochs,
   weightedMedian,
@@ -81,4 +82,10 @@ test("an unmatched usage jump does not collapse the estimate", () => {
   );
   assert.equal(result.validPairs, 2);
   assert.equal(result.headlineUsd, 100);
+});
+
+test("offline rate-card loading uses bundled official prices", async () => {
+  const cards = await loadRateCards(null);
+  assert.equal(cards["gpt-5.6-terra"].source, "official");
+  assert.equal(cards["gpt-5.6-terra"].input, 2);
 });
