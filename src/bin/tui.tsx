@@ -15,6 +15,13 @@ const METRICS: ReadonlyArray<readonly [string, string, string, string]> = [
   ["quota", "Weekly quota used", "usedPercent", "%"],
   ["cost", "Observed API-equivalent cost", "observedCostUsd", "$"],
 ];
+const USAGE_METRICS: ReadonlyArray<readonly [string, string, string]> = [
+  ["Total tokens", "totalTokens", ""],
+  ["Uncached input", "uncachedInputTokens", ""],
+  ["Cached input", "cachedInputTokens", ""],
+  ["Output tokens", "outputTokens", ""],
+  ["API-equivalent value", "apiValueUsd", "$"],
+];
 
 function usd(value) {
   return value == null ? "—" : new Intl.NumberFormat("en-US", {
@@ -47,6 +54,47 @@ function Loading() {
       h(Text, { dimColor: true }, `  ${seconds}s`),
     ),
     h(Text, { dimColor: true }, "Loading public rate cards and pairing token cost with weekly quota…"),
+  );
+}
+
+function WarningSplash({ report, onRetry }) {
+  const { exit } = useApp();
+  useInput((input, key) => {
+    if (input === "q" || key.escape) exit();
+    if (input === "r") onRetry();
+  });
+  const needsPairs = Math.max(0, 2 - report.validPairs);
+  const needsCoverage = Math.max(0, 5 - report.coveragePoints);
+  return h(Box, { flexDirection: "column", paddingX: 1 },
+    h(Text, { bold: true, color: "cyan" }, "weeklygrant"),
+    h(Box, {
+      marginTop: 1,
+      borderStyle: "double",
+      borderColor: "yellow",
+      paddingX: 2,
+      paddingY: 1,
+      flexDirection: "column",
+    },
+      h(Text, { bold: true, color: "yellow" }, "⚠  Estimate not ready"),
+      h(Box, { marginTop: 1, flexDirection: "column" },
+        h(Text, null, "There is not enough reliable weekly-quota movement to show a value yet."),
+        h(Text, null, "The current dollar signal and graph are hidden because they may be misleading."),
+      ),
+      h(Box, { marginTop: 1, flexDirection: "column" },
+        h(Text, { dimColor: true }, `Confidence: ${report.confidence} · ${report.validPairs} valid pair${report.validPairs === 1 ? "" : "s"} · ${report.coveragePoints.toFixed(1)} quota points`),
+        needsPairs > 0 && h(Text, { color: "yellow" }, `Need at least ${needsPairs} more valid measurement${needsPairs === 1 ? "" : "s"}.`),
+        needsCoverage > 0 && h(Text, { color: "yellow" }, `Need about ${needsCoverage.toFixed(1)} more quota points of coverage.`),
+      ),
+      h(Box, { marginTop: 1, flexDirection: "column" },
+        h(Text, null, "Use Codex normally, then rescan after weekly usage has moved."),
+        h(Text, { dimColor: true }, "The estimate dashboard unlocks at medium or high confidence."),
+      ),
+    ),
+    h(Box, { marginTop: 1 },
+      h(Text, { color: "cyan" }, "r"), h(Text, null, " rescan  "),
+      h(Text, { color: "cyan" }, "q"), h(Text, null, " quit"),
+    ),
+    h(Text, { dimColor: true }, "API-equivalent planning estimate — not a Codex bill or credit balance."),
   );
 }
 
@@ -104,7 +152,7 @@ function lineChart(points, field, width, height, prefix) {
     if (index === 0) setBraille(pixels, point.x, point.y);
     else drawLine(pixels, coordinates[index - 1].x, coordinates[index - 1].y, point.x, point.y);
   });
-  const format = (value) => prefix === "$" ? usd(value) : `${value.toFixed(1)}${prefix}`;
+  const format = (value) => prefix === "$" ? usd(value) : prefix === "%" ? `${value.toFixed(1)}%` : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
   const middle = min + span / 2;
   const labelWidth = Math.max(format(min).length, format(max).length, format(middle).length);
   return pixels.map((row, index) => {
@@ -112,6 +160,71 @@ function lineChart(points, field, width, height, prefix) {
     const graph = row.map((bits) => bits ? String.fromCodePoint(0x2800 + bits) : " ").join("");
     return `${axis.padStart(labelWidth)} ${index === height - 1 ? "└" : "│"}${graph}`;
   });
+}
+
+function UsageDashboard({ report }) {
+  const { exit } = useApp();
+  const { stdout } = useStdout();
+  const [modelIndex, setModelIndex] = useState(0);
+  const [metricIndex, setMetricIndex] = useState(0);
+  const [rangeIndex, setRangeIndex] = useState(3);
+  const models = report.modelUsage || [];
+  const selected = models[Math.min(modelIndex, Math.max(0, models.length - 1))];
+  useInput((input, key) => {
+    if (input === "q" || key.escape) exit();
+    if (key.leftArrow) setMetricIndex((value) => (value + USAGE_METRICS.length - 1) % USAGE_METRICS.length);
+    if (key.rightArrow) setMetricIndex((value) => (value + 1) % USAGE_METRICS.length);
+    if (key.upArrow && models.length) setModelIndex((value) => (value + models.length - 1) % models.length);
+    if (key.downArrow && models.length) setModelIndex((value) => (value + 1) % models.length);
+    if (input === "[") setRangeIndex((value) => (value + RANGES.length - 1) % RANGES.length);
+    if (input === "]") setRangeIndex((value) => (value + 1) % RANGES.length);
+  });
+  const [metricTitle, field, suffix] = USAGE_METRICS[metricIndex];
+  const [rangeName, rangeMs] = RANGES[rangeIndex];
+  const points = useMemo(() => {
+    if (!selected) return [];
+    const cutoff = Number.isFinite(rangeMs) ? Date.now() - rangeMs : -Infinity;
+    return (report.modelUsageSeries || []).filter((point) => point.model === selected.model && point.timestampMs >= cutoff);
+  }, [report, selected, rangeMs]);
+  const chartWidth = Math.min(96, Math.max(20, (stdout?.columns || 80) - 18));
+  const chart = lineChart(points, field, chartWidth, 9, suffix);
+  if (!selected) return h(Box, { flexDirection: "column", paddingX: 1 },
+    h(Text, { bold: true, color: "cyan" }, "weeklygrant usage"),
+    h(Text, { dimColor: true }, "No token usage found · q quit"),
+  );
+  const valueLabel = selected.pricedEvents ? `${usd(selected.apiValueUsd)}${selected.pendingEvents ? " partial" : ""}` : "unpriced";
+  return h(Box, { flexDirection: "column", paddingX: 1 },
+    h(Box, { justifyContent: "space-between" },
+      h(Text, { bold: true, color: "cyan" }, "weeklygrant usage"),
+      h(Text, { dimColor: true }, `${models.length} models · ${report.filesScanned} session files`),
+    ),
+    h(Box, { marginTop: 1, gap: 1, flexWrap: "wrap" },
+      h(Stat, { label: "Model", value: selected.model, color: "cyan" }),
+      h(Stat, { label: "Total tokens", value: selected.totalTokens.toLocaleString("en-US") }),
+      h(Stat, { label: "API-equivalent value", value: valueLabel, color: selected.pricedEvents ? "green" : "yellow" }),
+      h(Stat, { label: "Output tokens", value: selected.outputTokens.toLocaleString("en-US"), color: "yellow" }),
+    ),
+    h(Box, { marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
+      h(Box, { justifyContent: "space-between" },
+        h(Text, { bold: true }, metricTitle),
+        h(Text, null, RANGES.map(([name], index) => h(Text, { key: name, color: index === rangeIndex ? "cyan" : "gray", bold: index === rangeIndex }, `${index ? "  " : ""}${name}`))),
+      ),
+      h(Text, { color: suffix === "$" ? "green" : "cyan" }, chart.join("\n")),
+      h(Box, { justifyContent: "space-between" },
+        h(Text, { dimColor: true }, new Date(points[0]?.timestampMs || Date.now()).toLocaleDateString()),
+        h(Text, { dimColor: true }, `${points.length} events`),
+        h(Text, { dimColor: true }, rangeName),
+      ),
+    ),
+    h(Text, { dimColor: true }, `Input ${selected.uncachedInputTokens.toLocaleString("en-US")} · Cached ${selected.cachedInputTokens.toLocaleString("en-US")} · Output ${selected.outputTokens.toLocaleString("en-US")}`),
+    h(Box, { marginTop: 1 },
+      h(Text, { color: "cyan" }, "↑/↓"), h(Text, null, " model  "),
+      h(Text, { color: "cyan" }, "←/→"), h(Text, null, " metric  "),
+      h(Text, { color: "cyan" }, "[/]"), h(Text, null, " range  "),
+      h(Text, { color: "cyan" }, "q"), h(Text, null, " quit"),
+    ),
+    h(Text, { dimColor: true }, "API-equivalent planning value — not a Codex bill or credit balance."),
+  );
 }
 
 function Dashboard({ report }) {
@@ -183,22 +296,28 @@ function estimateInWorker(options) {
   });
 }
 
-function App({ options }) {
+function App({ options, view = "estimate" }) {
   const [state, setState] = useState({ loading: true, report: null, error: null });
+  const [generation, setGeneration] = useState(0);
   useEffect(() => {
     let active = true;
+    setState({ loading: true, report: null, error: null });
     estimateInWorker(options).then(
       (report) => active && setState({ loading: false, report, error: null }),
       (error) => active && setState({ loading: false, report: null, error }),
     );
     return () => { active = false; };
-  }, [options]);
+  }, [options, generation]);
   if (state.loading) return h(Loading);
   if (state.error) return h(Text, { color: "red" }, `weeklygrant: ${state.error.message}`);
+  if (view === "usage") return h(UsageDashboard, { report: state.report });
+  if (state.report.confidence === "low" || state.report.confidence === "none") {
+    return h(WarningSplash, { report: state.report, onRetry: () => setGeneration((value) => value + 1) });
+  }
   return h(Dashboard, { report: state.report });
 }
 
-export async function runTui(options) {
-  const instance = render(h(App, { options }));
+export async function runTui(options, view = "estimate") {
+  const instance = render(h(App, { options, view }));
   await instance.waitUntilExit();
 }

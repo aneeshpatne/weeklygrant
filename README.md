@@ -20,7 +20,7 @@ A local CLI that prices Codex session token deltas at public API rates and pairs
 
 weeklygrant reads Codex JSONL session files from `CODEX_HOME`, `~/.codex`, or a path you pass with `--home`. It extracts token-count deltas and weekly rate-limit observations, prices those tokens at public API-equivalent rates, and fits a weekly dollar value from how observed cost moves with reported quota percentage. The result is a local planning number — useful when you want to know what this week's grant is worth in API terms without sending session contents anywhere.
 
-On an interactive terminal the default command opens an [Ink](https://github.com/vadimdemedes/ink) dashboard: an animated worker-thread loader, then grant / quota / observed-cost Braille graphs with keyboard-controlled ranges. Piped output stays one headline and a few status lines; `--json` is the full machine-readable report. Pricing defaults to a GET of `https://models.dev/api.json` with a four-second timeout and bundled fallback cards; `--no-network` skips the request entirely.
+On an interactive terminal the default command opens an [Ink](https://github.com/vadimdemedes/ink) dashboard: an animated worker-thread loader, then grant / quota / observed-cost Braille graphs with keyboard-controlled ranges. Low- and no-confidence estimates are withheld behind a warning screen until enough reliable quota movement exists; press `r` there to rescan. Piped output stays one headline and a few status lines; `--json` is the full machine-readable report. Pricing defaults to a GET of `https://models.dev/api.json` with a four-second timeout and bundled fallback cards; `--no-network` skips the request entirely.
 
 ## Features
 
@@ -169,7 +169,7 @@ No install for a one-off run:
 ```bash
 npx weeklygrant                         # estimate from ~/.codex
 npx weeklygrant --json                  # full machine-readable report
-npx weeklygrant usage                  # token usage and API value by model
+npx weeklygrant usage                  # interactive per-model usage dashboard
 npx weeklygrant --home /path/to/.codex  # scan another Codex home
 npx weeklygrant --days 30               # only recently modified files
 npx weeklygrant --no-network            # bundled prices only
@@ -188,7 +188,7 @@ npm run dev -- --home /path/to/synthetic/.codex --no-network
 npm start                               # build, then node dist/bin/cli.js
 ```
 
-`CODEX_HOME` overrides the default home when `--home` is omitted. In the TUI: `←`/`→` change graphs, `↑`/`↓` change the time range, `q` or Escape quits.
+`CODEX_HOME` overrides the default home when `--home` is omitted. In the estimate TUI, `←`/`→` change graphs and `↑`/`↓` change the time range. In the usage TUI, `↑`/`↓` select a model, `←`/`→` change the token/value metric, and `[`/`]` change the time range. `q` or Escape quits either dashboard. When output is piped, `weeklygrant usage` prints a compact table instead.
 
 > [!IMPORTANT]
 > Unless you pass `--no-network`, weeklygrant performs a GET to `https://models.dev/api.json`. That request does not include session contents. `--json` includes the resolved Codex home path; use `--redact` before sharing output. Session files can contain prompts even though this tool only reads accounting fields — see [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).

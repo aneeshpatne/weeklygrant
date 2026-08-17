@@ -92,9 +92,9 @@ async function main() {
   const days = daysValue === undefined ? Infinity : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
   const estimateOptions = { home: option("--home"), days, noNetwork: args.includes("--no-network") };
-  if (process.stdout.isTTY && !args.includes("--json") && command !== "usage") {
+  if (process.stdout.isTTY && !args.includes("--json")) {
     const { runTui } = await import("./tui.js");
-    await runTui(estimateOptions);
+    await runTui(estimateOptions, command === "usage" ? "usage" : "estimate");
     return;
   }
   const report = await estimateCodexGrant(estimateOptions);
