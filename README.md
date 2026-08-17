@@ -169,6 +169,7 @@ No install for a one-off run:
 ```bash
 npx weeklygrant                         # estimate from ~/.codex
 npx weeklygrant --json                  # full machine-readable report
+npx weeklygrant usage                  # token usage and API value by model
 npx weeklygrant --home /path/to/.codex  # scan another Codex home
 npx weeklygrant --days 30               # only recently modified files
 npx weeklygrant --no-network            # bundled prices only

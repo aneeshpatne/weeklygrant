@@ -123,6 +123,38 @@ export function priceTokens(event, cards = FALLBACK_CARDS) {
   return { ...event, costUsd, eligible: true, pricingStatus: active.source || rate.source || "official" };
 }
 
+export function summarizeModelUsage(events) {
+  const models = new Map();
+  for (const event of events) {
+    const model = normalizeModel(event.model) || "unknown";
+    const existing = models.get(model) || {
+      model,
+      uncachedInputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      apiValueUsd: 0,
+      pricedEvents: 0,
+      pendingEvents: 0,
+    };
+    const uncachedInputTokens = number(event.uncachedInput);
+    const cachedInputTokens = number(event.cachedInput);
+    const outputTokens = number(event.billedOutput);
+    existing.uncachedInputTokens += uncachedInputTokens;
+    existing.cachedInputTokens += cachedInputTokens;
+    existing.outputTokens += outputTokens;
+    existing.totalTokens += uncachedInputTokens + cachedInputTokens + outputTokens;
+    if (event.eligible) {
+      existing.apiValueUsd += number(event.costUsd);
+      existing.pricedEvents += 1;
+    } else {
+      existing.pendingEvents += 1;
+    }
+    models.set(model, existing);
+  }
+  return [...models.values()].sort((a, b) => b.apiValueUsd - a.apiValueUsd || b.totalTokens - a.totalTokens || a.model.localeCompare(b.model));
+}
+
 function weeklyObservation(rateLimits, timestamp, sessionId) {
   if (!rateLimits || typeof rateLimits !== "object") return null;
   const candidates = [rateLimits.primary, rateLimits.secondary].filter(Boolean)
@@ -388,5 +420,6 @@ export async function estimateCodexGrant(options: EstimateOptions = {}) {
     rateCardMode: options.noNetwork ? "offline" : "online-with-fallback",
     codexHome: home,
     filesScanned: files.length,
+    modelUsage: summarizeModelUsage(events),
   };
 }

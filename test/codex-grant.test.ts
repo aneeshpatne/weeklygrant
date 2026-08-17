@@ -5,6 +5,7 @@ import {
   loadRateCards,
   priceTokens,
   splitEpochs,
+  summarizeModelUsage,
   weightedMedian,
 } from "../src/lib/codex-grant.js";
 
@@ -126,4 +127,34 @@ test("offline rate-card loading uses bundled official prices", async () => {
   const cards = await loadRateCards(null);
   assert.equal(cards["gpt-5.6-terra"].source, "official");
   assert.equal(cards["gpt-5.6-terra"].input, 2);
+});
+
+test("summarizes token usage and API value by model", () => {
+  const result = summarizeModelUsage([
+    { model: "gpt-5.2-codex", uncachedInput: 100, cachedInput: 50, billedOutput: 25, eligible: true, costUsd: 0.01 },
+    { model: "gpt-5.2-codex", uncachedInput: 200, cachedInput: 0, billedOutput: 10, eligible: true, costUsd: 0.02 },
+    { model: "future-model", uncachedInput: 5, cachedInput: 0, billedOutput: 1, eligible: false, costUsd: 0 },
+  ]);
+  assert.deepEqual(result, [
+    {
+      model: "gpt-5.2-codex",
+      uncachedInputTokens: 300,
+      cachedInputTokens: 50,
+      outputTokens: 35,
+      totalTokens: 385,
+      apiValueUsd: 0.03,
+      pricedEvents: 2,
+      pendingEvents: 0,
+    },
+    {
+      model: "future-model",
+      uncachedInputTokens: 5,
+      cachedInputTokens: 0,
+      outputTokens: 1,
+      totalTokens: 6,
+      apiValueUsd: 0,
+      pricedEvents: 0,
+      pendingEvents: 1,
+    },
+  ]);
 });

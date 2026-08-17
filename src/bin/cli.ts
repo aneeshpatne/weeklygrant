@@ -17,6 +17,7 @@ Usage:
 
 Commands:
   estimate  Estimate the API-equivalent value of the weekly Codex grant (default)
+  usage     Show token usage and API-equivalent value by model
   help     Show this help
   version  Print the CLI version
 
@@ -40,7 +41,7 @@ if (command === "help" || command === "-h" || command === "--help") {
   process.exit(0);
 }
 
-if (command && command !== "estimate" && command !== "--json" && !command.startsWith("--")) {
+if (command && command !== "estimate" && command !== "usage" && command !== "--json" && !command.startsWith("--")) {
   console.error(`Unknown command: ${command}`);
   printHelp();
   process.exit(1);
@@ -55,12 +56,43 @@ function money(value) {
   return value == null ? "Not enough data" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
 }
 
+function integer(value) {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function printUsage(report) {
+  if (!report.modelUsage.length) {
+    console.log("No token usage found");
+    return;
+  }
+  const rows = report.modelUsage.map((item) => {
+    const value = item.pricedEvents
+      ? `${money(item.apiValueUsd)}${item.pendingEvents ? " partial" : ""}`
+      : "unpriced";
+    return [
+      item.model,
+      integer(item.uncachedInputTokens),
+      integer(item.cachedInputTokens),
+      integer(item.outputTokens),
+      integer(item.totalTokens),
+      value,
+    ];
+  });
+  const headers = ["Model", "Input", "Cached", "Output", "Total", "API value"];
+  const widths = headers.map((header, index) => Math.max(header.length, ...rows.map((row) => row[index].length)));
+  const line = (row) => row.map((cell, index) => index === 0 ? cell.padEnd(widths[index]) : cell.padStart(widths[index])).join("  ");
+  console.log(line(headers));
+  console.log(line(widths.map((width) => "─".repeat(width))));
+  rows.forEach((row) => console.log(line(row)));
+  console.log("\nAPI-equivalent planning value; not a Codex bill or credit balance.");
+}
+
 async function main() {
   const daysValue = option("--days");
   const days = daysValue === undefined ? Infinity : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
   const estimateOptions = { home: option("--home"), days, noNetwork: args.includes("--no-network") };
-  if (process.stdout.isTTY && !args.includes("--json")) {
+  if (process.stdout.isTTY && !args.includes("--json") && command !== "usage") {
     const { runTui } = await import("./tui.js");
     await runTui(estimateOptions);
     return;
@@ -69,6 +101,10 @@ async function main() {
   if (args.includes("--json")) {
     const output = args.includes("--redact") ? { ...report, codexHome: "[redacted]" } : report;
     console.log(JSON.stringify(output, null, 2));
+    return;
+  }
+  if (command === "usage") {
+    printUsage(report);
     return;
   }
   console.log(money(report.headlineUsd));
