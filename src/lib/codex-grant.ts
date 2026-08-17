@@ -1,10 +1,8 @@
-"use strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-
-const WEEKLY_GRANT_VERSION = "weekly-grant-estimate";
+export const WEEKLY_GRANT_VERSION = "weekly-grant-estimate";
 const WEEKLY_MINUTES = 10_080;
 const WEEKLY_TOLERANCE = 240;
 const RESET_JITTER_MS = 2 * 60 * 60 * 1000;
@@ -17,7 +15,29 @@ const MEDIAN_SAMPLE_COUNT = 7;
 const ESTIMATE_SAMPLE_COUNT = 12;
 const LONG_CONTEXT_TOKENS = 272_000;
 
-const FALLBACK_CARDS = {
+type RateTier = {
+  threshold: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+};
+
+type RateCard = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  tiers: RateTier[];
+  source?: "official" | "models_dev";
+};
+
+export type EstimateOptions = {
+  home?: string;
+  days?: number;
+  noNetwork?: boolean;
+  fetch?: typeof globalThis.fetch | null;
+};
+
+export const FALLBACK_CARDS: Record<string, RateCard> = {
   "gpt-5": card(1.25, 10, 0.125),
   "gpt-5-codex": card(1.25, 10, 0.125),
   "gpt-5.1": card(1.25, 10, 0.125),
@@ -36,11 +56,11 @@ const FALLBACK_CARDS = {
   "gpt-5.6-terra": card(2, 12, 0.2, tier(4, 18, 0.4)),
 };
 
-function card(input, output, cacheRead, longTier) {
+function card(input: number, output: number, cacheRead: number, longTier: RateTier | null = null): RateCard {
   return { input, output, cacheRead, tiers: longTier ? [longTier] : [] };
 }
 
-function tier(input, output, cacheRead) {
+function tier(input: number, output: number, cacheRead: number): RateTier {
   return { threshold: LONG_CONTEXT_TOKENS, input, output, cacheRead };
 }
 
@@ -49,7 +69,7 @@ function number(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function timestampMs(value) {
+export function timestampMs(value) {
   if (typeof value === "string" && !/^\d+(\.\d+)?$/.test(value.trim())) {
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : null;
@@ -59,7 +79,7 @@ function timestampMs(value) {
   return parsed < 1e12 ? parsed * 1000 : parsed;
 }
 
-function normalizeModel(model) {
+export function normalizeModel(model) {
   return String(model || "").trim().toLowerCase().replaceAll("/", "-").replace(/^openai-/, "");
 }
 
@@ -77,7 +97,7 @@ function pickCard(model, cards) {
   return family ? cards[family] || FALLBACK_CARDS[family] : null;
 }
 
-function priceTokens(event, cards = FALLBACK_CARDS) {
+export function priceTokens(event, cards = FALLBACK_CARDS) {
   const rate = pickCard(event.model, cards);
   if (!rate) return { ...event, costUsd: 0, eligible: false, pricingStatus: "pending" };
   const inputTokens = number(event.uncachedInput) + number(event.cachedInput);
@@ -122,7 +142,7 @@ function weeklyObservation(rateLimits, timestamp, sessionId) {
   };
 }
 
-function parseLogFile(file) {
+export function parseLogFile(file) {
   const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
   let sessionId = path.basename(file, ".jsonl");
   let model = "";
@@ -188,7 +208,7 @@ function walkJsonl(root, cutoff, output = []) {
   return output;
 }
 
-function collapseObservations(observations) {
+export function collapseObservations(observations) {
   const grouped = new Map();
   for (const item of observations) {
     if (!Number.isFinite(item.usedPercent) || item.usedPercent < 0 || item.usedPercent > 100) continue;
@@ -199,7 +219,7 @@ function collapseObservations(observations) {
   return [...grouped.values()].sort((a, b) => a.timestampMs - b.timestampMs);
 }
 
-function splitEpochs(observations) {
+export function splitEpochs(observations) {
   const groups = new Map();
   for (const item of observations) {
     const key = `${item.accountKey}:${item.limitId}`;
@@ -234,7 +254,7 @@ function median(values) {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
-function weightedMedian(rates) {
+export function weightedMedian(rates) {
   if (!rates.length) return null;
   const sorted = [...rates].sort((a, b) => a.value - b.value);
   const halfway = sorted.reduce((sum, rate) => sum + rate.weight, 0) / 2;
@@ -258,7 +278,7 @@ function costInWindow(events, start, end, limitId) {
     && (!event.quotaLimitId || event.quotaLimitId === limitId) ? event.costUsd : 0), 0);
 }
 
-function estimateGrantFromLogs(events, observations) {
+export function estimateGrantFromLogs(events, observations) {
   const collapsed = collapseObservations(observations);
   const epochs = splitEpochs(collapsed);
   let allValidPairs = 0;
@@ -327,11 +347,11 @@ function estimateGrantFromLogs(events, observations) {
   };
 }
 
-function parseModelsDev(data) {
+function parseModelsDev(data: any): Record<string, RateCard> {
   const models = data?.openai?.models;
   if (!models || typeof models !== "object") return {};
-  const cards = {};
-  for (const [id, value] of Object.entries(models)) {
+  const cards: Record<string, RateCard> = {};
+  for (const [id, value] of Object.entries(models) as Array<[string, any]>) {
     const cost = value?.cost;
     const input = number(cost?.input, NaN);
     const output = number(cost?.output, NaN);
@@ -342,8 +362,8 @@ function parseModelsDev(data) {
   return cards;
 }
 
-async function loadRateCards(fetchImpl = globalThis.fetch) {
-  const fallback = Object.fromEntries(Object.entries(FALLBACK_CARDS).map(([id, value]) => [id, { ...value, source: "official" }]));
+export async function loadRateCards(fetchImpl: typeof globalThis.fetch | null = globalThis.fetch): Promise<Record<string, RateCard>> {
+  const fallback: Record<string, RateCard> = Object.fromEntries(Object.entries(FALLBACK_CARDS).map(([id, value]) => [id, { ...value, source: "official" }]));
   if (!fetchImpl) return fallback;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 4000);
@@ -355,7 +375,7 @@ async function loadRateCards(fetchImpl = globalThis.fetch) {
   finally { clearTimeout(timeout); }
 }
 
-async function estimateCodexGrant(options = {}) {
+export async function estimateCodexGrant(options: EstimateOptions = {}) {
   const home = path.resolve(options.home || String(process.env.CODEX_HOME || "").split(",")[0] || path.join(os.homedir(), ".codex"));
   const cutoff = Number.isFinite(options.days) ? Date.now() - options.days * 86_400_000 : -Infinity;
   const files = [...walkJsonl(path.join(home, "sessions"), cutoff), ...walkJsonl(path.join(home, "archived_sessions"), cutoff)];
@@ -372,9 +392,3 @@ async function estimateCodexGrant(options = {}) {
     filesScanned: files.length,
   };
 }
-
-module.exports = {
-  FALLBACK_CARDS, WEEKLY_GRANT_VERSION, collapseObservations, estimateCodexGrant,
-  estimateGrantFromLogs, loadRateCards, normalizeModel, parseLogFile, priceTokens,
-  splitEpochs, timestampMs, weightedMedian,
-};

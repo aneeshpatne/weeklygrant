@@ -3,17 +3,18 @@
   "version": "1.0.0",
   "description": "Estimate the API-equivalent value of a weekly Codex grant from local session logs.",
   "bin": {
-    "weeklygrant": "./bin/cli.js"
+    "weeklygrant": "./dist/bin/cli.js"
   },
   "scripts": {
-    "start": "node bin/cli.js",
-    "test": "node --test",
-    "check": "node --check bin/cli.js && node --check bin/estimate-worker.js && node --check bin/tui.mjs && node --check lib/codex-grant.js",
-    "prepack": "npm test && npm run check"
+    "build": "tsc -p tsconfig.build.json",
+    "start": "npm run build --silent && node dist/bin/cli.js",
+    "dev": "tsx src/bin/cli.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "check": "tsc --noEmit",
+    "prepack": "npm test && npm run check && npm run build"
   },
   "files": [
-    "bin",
-    "lib",
+    "dist",
     "PRIVACY.md",
     "SECURITY.md",
     "CHANGELOG.md",
@@ -27,12 +28,18 @@
   ],
   "author": "aneeshpatne",
   "license": "MIT",
-  "type": "commonjs",
+  "type": "module",
   "engines": {
     "node": ">=22"
   },
   "dependencies": {
     "ink": "^7.1.1",
     "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2"
   }
 }

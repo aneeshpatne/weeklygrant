@@ -4,13 +4,13 @@ import { Worker } from "node:worker_threads";
 
 const h = React.createElement;
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const RANGES = [
+const RANGES: ReadonlyArray<readonly [string, number]> = [
   ["24h", 86_400_000],
   ["7d", 7 * 86_400_000],
   ["30d", 30 * 86_400_000],
   ["all", Infinity],
 ];
-const METRICS = [
+const METRICS: ReadonlyArray<readonly [string, string, string, string]> = [
   ["grant", "Estimated grant", "valueUsd", "$"],
   ["quota", "Weekly quota used", "usedPercent", "%"],
   ["cost", "Observed API-equivalent cost", "observedCostUsd", "$"],

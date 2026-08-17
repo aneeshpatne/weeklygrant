@@ -1,14 +1,12 @@
-"use strict";
-
-const assert = require("node:assert/strict");
-const test = require("node:test");
-const {
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
   estimateGrantFromLogs,
   loadRateCards,
   priceTokens,
   splitEpochs,
   weightedMedian,
-} = require("../lib/codex-grant");
+} from "../src/lib/codex-grant.js";
 
 function observation(timestampMs, usedPercent, resetsAtMs = 100_000) {
   return { timestampMs, usedPercent, resetsAtMs, limitId: "codex", accountKey: "local" };

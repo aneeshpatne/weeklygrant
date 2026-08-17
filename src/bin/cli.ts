@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 
+import { createRequire } from "node:module";
+import { estimateCodexGrant } from "../lib/codex-grant.js";
+
+const require = createRequire(import.meta.url);
+
 const args = process.argv.slice(2);
 const command = args[0];
 
@@ -51,13 +56,12 @@ function money(value) {
 }
 
 async function main() {
-  const { estimateCodexGrant } = require("../lib/codex-grant");
   const daysValue = option("--days");
   const days = daysValue === undefined ? Infinity : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
   const estimateOptions = { home: option("--home"), days, noNetwork: args.includes("--no-network") };
   if (process.stdout.isTTY && !args.includes("--json")) {
-    const { runTui } = await import("./tui.mjs");
+    const { runTui } = await import("./tui.js");
     await runTui(estimateOptions);
     return;
   }
