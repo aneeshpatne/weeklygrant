@@ -4,6 +4,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.3
+
 - Interactive `weeklygrant usage` dashboard with per-model token and API-value graphs.
 - Cumulative per-model usage series on the estimate report.
 - Low- and no-confidence TUI estimates are now replaced by a warning splash
