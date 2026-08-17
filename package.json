@@ -27,6 +27,14 @@
     "tui"
   ],
   "author": "aneeshpatne",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aneeshpatne/weeklygrant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aneeshpatne/weeklygrant/issues"
+  },
+  "homepage": "https://github.com/aneeshpatne/weeklygrant#readme",
   "license": "MIT",
   "type": "module",
   "engines": {
