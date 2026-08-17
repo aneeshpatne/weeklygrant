@@ -1,20 +1,38 @@
 {
   "name": "weeklygrant",
   "version": "1.0.0",
-  "description": "",
+  "description": "Estimate the API-equivalent value of a weekly Codex grant from local session logs.",
   "bin": {
     "weeklygrant": "./bin/cli.js"
   },
   "scripts": {
     "start": "node bin/cli.js",
-    "test": "node --test"
+    "test": "node --test",
+    "check": "node --check bin/cli.js && node --check bin/estimate-worker.js && node --check bin/tui.mjs && node --check lib/codex-grant.js",
+    "prepack": "npm test && npm run check"
   },
   "files": [
     "bin",
-    "lib"
+    "lib",
+    "PRIVACY.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
   ],
-  "keywords": [],
+  "keywords": [
+    "codex",
+    "cli",
+    "usage",
+    "tui"
+  ],
   "author": "aneeshpatne",
   "license": "MIT",
-  "type": "commonjs"
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "ink": "^7.1.1",
+    "react": "^19.2.8"
+  }
 }
