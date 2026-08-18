@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.5
+
+- README rewritten as a product landing page, architecture overview, and contributor guide.
+
 ## 1.0.4
 
 - Usage TUI time range is now `-`/`+` instead of `[`/`]`.

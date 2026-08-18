@@ -4,6 +4,8 @@
 
 **See the API-equivalent dollar value of your weekly Codex grant — from the logs already on your machine.**
 
+[![npm](https://img.shields.io/npm/v/weeklygrant)](https://www.npmjs.com/package/weeklygrant)
+[![npm downloads](https://img.shields.io/npm/dm/weeklygrant.svg)](https://www.npmjs.com/package/weeklygrant)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=fff)](https://nodejs.org/)
 [![Ink](https://img.shields.io/badge/UI-Ink-61DAFB?logo=react&logoColor=000)](https://github.com/vadimdemedes/ink)
@@ -14,7 +16,7 @@
 
 ## Run it
 
-No install or configuration required:
+Published on [npm](https://www.npmjs.com/package/weeklygrant). No install or configuration required:
 
 ```bash
 npx weeklygrant
