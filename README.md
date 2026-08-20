@@ -76,7 +76,9 @@ subscription term. It can be less reliable when:
 - prices or rounded quota observations change.
 
 Low- and no-confidence estimates are withheld in the interactive UI until there
-is enough reliable quota movement. Press `r` on that screen to rescan.
+is enough reliable quota movement. If there is already enough history to graph,
+the dashboard still renders quota and cost series and shows the estimate as a
+dash. Press `r` to rescan.
 
 > [!WARNING]
 > weeklygrant is independent and unofficial. It is not affiliated with,

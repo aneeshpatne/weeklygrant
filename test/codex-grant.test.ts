@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   buildModelUsageSeries,
   estimateGrantFromLogs,
+  hasGraphableSeries,
+  isStableEstimate,
   loadRateCards,
   priceTokens,
   splitEpochs,
@@ -107,6 +109,34 @@ test("a new epoch does not inherit confidence from the previous epoch", () => {
   );
   assert.equal(result.validPairs, 1);
   assert.equal(result.confidence, "low");
+});
+
+test("two early quotes are graphable while the headline stays unready", () => {
+  const result = estimateGrantFromLogs(
+    [pricedEvent(1_500, 0.42), pricedEvent(3_500, 0.42)],
+    [
+      observation(1_000, 0),
+      observation(2_000, 1),
+      observation(4_000, 2),
+    ],
+  );
+  assert.equal(result.confidence, "low");
+  assert.equal(result.validPairs, 2);
+  assert.equal(result.coveragePoints, 2);
+  assert.equal(isStableEstimate(result.confidence), false);
+  assert.equal(hasGraphableSeries(result.series), true);
+});
+
+test("a single quote is not graphable", () => {
+  const result = estimateGrantFromLogs(
+    [pricedEvent(1_500, 0.42)],
+    [observation(1_000, 0), observation(2_000, 1)],
+  );
+  assert.equal(hasGraphableSeries(result.series), false);
+  assert.equal(hasGraphableSeries([]), false);
+  assert.equal(isStableEstimate("medium"), true);
+  assert.equal(isStableEstimate("high"), true);
+  assert.equal(isStableEstimate("low"), false);
 });
 
 test("a new epoch does not graph a stale estimate as a heartbeat", () => {

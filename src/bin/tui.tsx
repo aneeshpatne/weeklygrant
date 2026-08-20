@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
 import { spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
+import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
 import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
 
 const h = React.createElement;
@@ -99,13 +100,19 @@ function StarNudge({ onDone }) {
   );
 }
 
+function withheldReason(report) {
+  const needsPairs = Math.max(0, 2 - report.validPairs);
+  const needsCoverage = Math.max(0, 5 - report.coveragePoints);
+  if (needsPairs > 0) return `Need at least ${needsPairs} more valid measurement${needsPairs === 1 ? "" : "s"}`;
+  if (needsCoverage > 0) return `Need about ${needsCoverage.toFixed(1)} more quota points of coverage`;
+  return "Need a more stable fit across measurements";
+}
+
 function WarningSplash({ report, onRetry, onQuit }) {
   useInput((input, key) => {
     if (isQuitKey(input, key)) onQuit();
     if (input === "r") onRetry();
   });
-  const needsPairs = Math.max(0, 2 - report.validPairs);
-  const needsCoverage = Math.max(0, 5 - report.coveragePoints);
   return h(Box, { flexDirection: "column", paddingX: 1 },
     h(Text, { bold: true, color: "cyan" }, "weeklygrant"),
     h(Box, {
@@ -118,13 +125,12 @@ function WarningSplash({ report, onRetry, onQuit }) {
     },
       h(Text, { bold: true, color: "yellow" }, "⚠  Estimate not ready"),
       h(Box, { marginTop: 1, flexDirection: "column" },
-        h(Text, null, "There is not enough reliable weekly-quota movement to show a value yet."),
-        h(Text, null, "The current dollar signal and graph are hidden because they may be misleading."),
+        h(Text, null, "There is not enough weekly-quota history to graph or estimate yet."),
+        h(Text, null, "The dollar value stays hidden until there is a stable weekly signal."),
       ),
       h(Box, { marginTop: 1, flexDirection: "column" },
         h(Text, { dimColor: true }, `Confidence: ${report.confidence} · ${report.validPairs} valid pair${report.validPairs === 1 ? "" : "s"} · ${report.coveragePoints.toFixed(1)} quota points`),
-        needsPairs > 0 && h(Text, { color: "yellow" }, `Need at least ${needsPairs} more valid measurement${needsPairs === 1 ? "" : "s"}.`),
-        needsCoverage > 0 && h(Text, { color: "yellow" }, `Need about ${needsCoverage.toFixed(1)} more quota points of coverage.`),
+        h(Text, { color: "yellow" }, `${withheldReason(report)}.`),
       ),
       h(Box, { marginTop: 1, flexDirection: "column" },
         h(Text, null, "Use Codex normally, then rescan after weekly usage has moved."),
@@ -267,12 +273,14 @@ function UsageDashboard({ report, onQuit }) {
   );
 }
 
-function Dashboard({ report, onQuit }) {
+function Dashboard({ report, onQuit, onRetry }) {
   const { stdout } = useStdout();
-  const [metricIndex, setMetricIndex] = useState(0);
-  const [rangeIndex, setRangeIndex] = useState(1);
+  const estimateReady = isStableEstimate(report.confidence);
+  const [metricIndex, setMetricIndex] = useState(estimateReady ? 0 : 1);
+  const [rangeIndex, setRangeIndex] = useState(estimateReady ? 1 : 3);
   useInput((input, key) => {
     if (isQuitKey(input, key)) onQuit();
+    if (input === "r") onRetry();
     if (key.leftArrow) setMetricIndex((value) => (value + METRICS.length - 1) % METRICS.length);
     if (key.rightArrow) setMetricIndex((value) => (value + 1) % METRICS.length);
     if (key.upArrow) setRangeIndex((value) => (value + RANGES.length - 1) % RANGES.length);
@@ -293,11 +301,12 @@ function Dashboard({ report, onQuit }) {
       h(Text, { dimColor: true }, `${report.filesScanned} session files · ${report.algorithm}`),
     ),
     h(Box, { marginTop: 1, gap: 1, flexWrap: "wrap" },
-      h(Stat, { label: "Estimated weekly API value", value: usd(report.headlineUsd), color: "green" }),
+      h(Stat, { label: "Estimated weekly API value", value: usd(estimateReady ? report.headlineUsd : null), color: estimateReady ? "green" : "gray" }),
       h(Stat, { label: "Confidence", value: report.confidence.toUpperCase(), color: confidenceColor }),
       h(Stat, { label: "Weekly quota", value: report.weeklyUsedPercent == null ? "—" : `${report.weeklyUsedPercent.toFixed(1)}% used`, color: "cyan" }),
       h(Stat, { label: "Resets", value: relativeTime(report.resetsAtMs) }),
     ),
+    !estimateReady && h(Text, { color: "yellow" }, `Estimate withheld · ${withheldReason(report)}.`),
     h(Box, { marginTop: 1, borderStyle: "round", borderColor: "cyan", paddingX: 1, flexDirection: "column" },
       h(Box, { justifyContent: "space-between" },
         h(Text, { bold: true }, title),
@@ -312,7 +321,7 @@ function Dashboard({ report, onQuit }) {
     ),
     h(Box, { marginTop: 1, gap: 3 },
       h(Text, null, `Observed spend  ${usd(report.observedTokenCostUsd)}`),
-      h(Text, null, `Current signal  ${usd(report.rawUsd)}`),
+      h(Text, null, `Current signal  ${usd(estimateReady ? report.rawUsd : null)}`),
       h(Text, null, `Coverage  ${report.coveragePoints.toFixed(1)} pts`),
     ),
     h(Text, { dimColor: true }, `${report.validPairs} valid pairs · ${report.pricedEvents} priced events · ${report.pendingEvents} pending · plan ${report.planType || "unknown"}`),
@@ -320,6 +329,7 @@ function Dashboard({ report, onQuit }) {
     h(Box, { marginTop: 1 },
       h(Text, { color: "cyan" }, "←/→"), h(Text, null, " graph  "),
       h(Text, { color: "cyan" }, "↑/↓"), h(Text, null, " range  "),
+      h(Text, { color: "cyan" }, "r"), h(Text, null, " rescan  "),
       h(Text, { color: "cyan" }, "q"), h(Text, null, " quit"),
     ),
     h(Text, { dimColor: true }, "API-equivalent planning estimate — not a Codex bill or credit balance."),
@@ -361,11 +371,12 @@ function App({ options, view = "estimate" }) {
   if (leaving) return h(StarNudge, { onDone: exit });
   if (state.loading) return h(Loading);
   if (state.error) return h(Text, { color: "red" }, `weeklygrant: ${state.error.message}`);
+  const onRetry = () => setGeneration((value) => value + 1);
   if (view === "usage") return h(UsageDashboard, { report: state.report, onQuit: requestQuit });
-  if (state.report.confidence === "low" || state.report.confidence === "none") {
-    return h(WarningSplash, { report: state.report, onRetry: () => setGeneration((value) => value + 1), onQuit: requestQuit });
+  if (!isStableEstimate(state.report.confidence) && !hasGraphableSeries(state.report.series)) {
+    return h(WarningSplash, { report: state.report, onRetry, onQuit: requestQuit });
   }
-  return h(Dashboard, { report: state.report, onQuit: requestQuit });
+  return h(Dashboard, { report: state.report, onQuit: requestQuit, onRetry });
 }
 
 export async function runTui(options, view = "estimate") {

@@ -320,6 +320,17 @@ function classifyConfidence(validPairs, coverage, fitted) {
   return "low";
 }
 
+export function isStableEstimate(confidence) {
+  return confidence === "medium" || confidence === "high";
+}
+
+export function hasGraphableSeries(series, minPoints = 2) {
+  if (!Array.isArray(series) || series.length < minPoints) return false;
+  return ["valueUsd", "usedPercent", "observedCostUsd"].some(
+    (field) => series.filter((point) => Number.isFinite(Number(point[field]))).length >= minPoints,
+  );
+}
+
 function costInWindow(events, start, end, limitId) {
   return events.reduce((sum, event) => sum + (event.eligible && event.timestampMs > start && event.timestampMs <= end
     && (!event.quotaLimitId || event.quotaLimitId === limitId) ? event.costUsd : 0), 0);

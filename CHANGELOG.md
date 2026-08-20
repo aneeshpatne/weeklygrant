@@ -4,6 +4,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Low-confidence TUI still graphs measured history when two or more points exist; the headline estimate stays a dash until medium or high confidence.
+
 ## 1.0.7
 
 - TUI quit (q / Esc / Ctrl+C) can show a GitHub star reminder, with n to hide it next time.
