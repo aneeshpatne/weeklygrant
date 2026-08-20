@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.6
+
+- npm publishes from GitHub Actions with provenance (signed build, source commit, and transparency log).
+
 ## 1.0.5
 
 - README rewritten as a product landing page, architecture overview, and contributor guide.
