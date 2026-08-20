@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.0.7
+
+- TUI quit (q / Esc / Ctrl+C) can show a GitHub star reminder, with n to hide it next time.
+
 ## 1.0.6
 
 - npm publishes from GitHub Actions with provenance (signed build, source commit, and transparency log).

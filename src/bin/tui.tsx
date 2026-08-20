@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
+import { spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
+import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
 
 const h = React.createElement;
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -57,10 +59,49 @@ function Loading() {
   );
 }
 
-function WarningSplash({ report, onRetry }) {
-  const { exit } = useApp();
+function isQuitKey(input, key) {
+  return input === "q" || key.escape || (key.ctrl && input === "c");
+}
+
+function openInBrowser(url) {
+  const options = { stdio: "ignore" as const, detached: true };
+  try {
+    if (process.platform === "darwin") spawn("open", [url], options).unref();
+    else if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], options).unref();
+    else spawn("xdg-open", [url], options).unref();
+  } catch {}
+}
+
+function StarNudge({ onDone }) {
   useInput((input, key) => {
-    if (input === "q" || key.escape) exit();
+    if (input === "n") {
+      try { persistHideStarNudge(); } catch {}
+      onDone();
+      return;
+    }
+    if (input === "s") {
+      openInBrowser(REPO_URL);
+      return;
+    }
+    if (isQuitKey(input, key) || key.return) onDone();
+  });
+  return h(Box, { flexDirection: "column", paddingX: 1 },
+    h(Text, { bold: true, color: "cyan" }, "weeklygrant"),
+    h(Box, { marginTop: 1, flexDirection: "column" },
+      h(Text, null, "If this was useful, star the repo:"),
+      h(Text, { color: "cyan" }, `  ${REPO_URL}`),
+    ),
+    h(Box, { marginTop: 1 },
+      h(Text, { color: "cyan" }, "s"), h(Text, null, " open  "),
+      h(Text, { color: "cyan" }, "n"), h(Text, null, " don't show again  "),
+      h(Text, { color: "cyan" }, "q"), h(Text, null, " quit"),
+    ),
+  );
+}
+
+function WarningSplash({ report, onRetry, onQuit }) {
+  useInput((input, key) => {
+    if (isQuitKey(input, key)) onQuit();
     if (input === "r") onRetry();
   });
   const needsPairs = Math.max(0, 2 - report.validPairs);
@@ -162,8 +203,7 @@ function lineChart(points, field, width, height, prefix) {
   });
 }
 
-function UsageDashboard({ report }) {
-  const { exit } = useApp();
+function UsageDashboard({ report, onQuit }) {
   const { stdout } = useStdout();
   const [modelIndex, setModelIndex] = useState(0);
   const [metricIndex, setMetricIndex] = useState(0);
@@ -171,7 +211,7 @@ function UsageDashboard({ report }) {
   const models = report.modelUsage || [];
   const selected = models[Math.min(modelIndex, Math.max(0, models.length - 1))];
   useInput((input, key) => {
-    if (input === "q" || key.escape) exit();
+    if (isQuitKey(input, key)) onQuit();
     if (key.leftArrow) setMetricIndex((value) => (value + USAGE_METRICS.length - 1) % USAGE_METRICS.length);
     if (key.rightArrow) setMetricIndex((value) => (value + 1) % USAGE_METRICS.length);
     if (key.upArrow && models.length) setModelIndex((value) => (value + models.length - 1) % models.length);
@@ -227,13 +267,12 @@ function UsageDashboard({ report }) {
   );
 }
 
-function Dashboard({ report }) {
-  const { exit } = useApp();
+function Dashboard({ report, onQuit }) {
   const { stdout } = useStdout();
   const [metricIndex, setMetricIndex] = useState(0);
   const [rangeIndex, setRangeIndex] = useState(1);
   useInput((input, key) => {
-    if (input === "q" || key.escape) exit();
+    if (isQuitKey(input, key)) onQuit();
     if (key.leftArrow) setMetricIndex((value) => (value + METRICS.length - 1) % METRICS.length);
     if (key.rightArrow) setMetricIndex((value) => (value + 1) % METRICS.length);
     if (key.upArrow) setRangeIndex((value) => (value + RANGES.length - 1) % RANGES.length);
@@ -297,8 +336,10 @@ function estimateInWorker(options) {
 }
 
 function App({ options, view = "estimate" }) {
+  const { exit } = useApp();
   const [state, setState] = useState({ loading: true, report: null, error: null });
   const [generation, setGeneration] = useState(0);
+  const [leaving, setLeaving] = useState(false);
   useEffect(() => {
     let active = true;
     setState({ loading: true, report: null, error: null });
@@ -308,16 +349,26 @@ function App({ options, view = "estimate" }) {
     );
     return () => { active = false; };
   }, [options, generation]);
+  const requestQuit = () => {
+    const usedApp = !state.loading && !state.error;
+    if (!usedApp || isStarNudgeHidden()) exit();
+    else setLeaving(true);
+  };
+  useInput((input, key) => {
+    if (leaving) return;
+    if (isQuitKey(input, key)) requestQuit();
+  });
+  if (leaving) return h(StarNudge, { onDone: exit });
   if (state.loading) return h(Loading);
   if (state.error) return h(Text, { color: "red" }, `weeklygrant: ${state.error.message}`);
-  if (view === "usage") return h(UsageDashboard, { report: state.report });
+  if (view === "usage") return h(UsageDashboard, { report: state.report, onQuit: requestQuit });
   if (state.report.confidence === "low" || state.report.confidence === "none") {
-    return h(WarningSplash, { report: state.report, onRetry: () => setGeneration((value) => value + 1) });
+    return h(WarningSplash, { report: state.report, onRetry: () => setGeneration((value) => value + 1), onQuit: requestQuit });
   }
-  return h(Dashboard, { report: state.report });
+  return h(Dashboard, { report: state.report, onQuit: requestQuit });
 }
 
 export async function runTui(options, view = "estimate") {
-  const instance = render(h(App, { options, view }));
+  const instance = render(h(App, { options, view }), { exitOnCtrlC: false });
   await instance.waitUntilExit();
 }

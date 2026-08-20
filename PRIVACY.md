@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: August 17, 2026.
+Last updated: August 20, 2026.
 
 weeklygrant is a local command-line tool. It reads Codex JSONL session files from
 `CODEX_HOME`, `~/.codex`, or a path explicitly supplied with `--home`. It uses
@@ -16,6 +16,10 @@ observations to calculate a local estimate.
 - weeklygrant does not create its own usage database or retain a copy of session
   contents. npm/Bun and the operating system may maintain their normal package,
   DNS, or network caches independently of this project.
+- If you press `n` on the optional GitHub star reminder, weeklygrant writes
+  `hideStarNudge: true` to `~/.config/weeklygrant/config.json` (or
+  `$XDG_CONFIG_HOME/weeklygrant/config.json`, or `$WEEKLYGRANT_CONFIG`). That
+  file is not created until you opt out, and it stores only that preference.
 - `--json` output contains calculated usage metadata and the resolved Codex home
   path. Use `--redact` to replace that path before storing or sharing the output.
 
