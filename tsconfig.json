@@ -6,11 +6,10 @@
     "strict": false,
     "noUncheckedIndexedAccess": false,
     "exactOptionalPropertyTypes": false,
-    "jsx": "react-jsx",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "types": ["node", "react"]
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

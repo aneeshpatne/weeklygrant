@@ -1,12 +1,12 @@
 {
   "name": "weeklygrant",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "Estimate the API-equivalent value of a weekly Codex grant from local session logs.",
   "bin": {
     "weeklygrant": "./dist/bin/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/bin/cli.js', 0o755)\"",
     "start": "npm run build --silent && node dist/bin/cli.js",
     "dev": "tsx src/bin/cli.ts",
     "test": "node --import tsx --test test/*.test.ts",
@@ -14,11 +14,7 @@
     "prepack": "npm test && npm run check && npm run build"
   },
   "files": [
-    "dist",
-    "PRIVACY.md",
-    "SECURITY.md",
-    "CHANGELOG.md",
-    "CONTRIBUTING.md"
+    "dist"
   ],
   "keywords": [
     "codex",
@@ -40,13 +36,8 @@
   "engines": {
     "node": ">=22"
   },
-  "dependencies": {
-    "ink": "^7.1.1",
-    "react": "^19.2.8"
-  },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "@types/react": "^19.2.18",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

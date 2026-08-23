@@ -18,6 +18,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: No production dependencies
+        run: |
+          node -e "if (require('./package.json').dependencies) { console.error('production dependencies must be empty'); process.exit(1) }"
+          extra="$(npm ls --omit=dev --all --parseable | tail -n +2)"
+          if [ -n "$extra" ]; then echo "$extra"; exit 1; fi
       - run: npm test
       - run: npm run check
       - run: npm run build

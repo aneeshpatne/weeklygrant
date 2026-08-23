@@ -8,7 +8,6 @@
 [![npm downloads](https://img.shields.io/npm/dm/weeklygrant.svg)](https://www.npmjs.com/package/weeklygrant)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=fff)](https://nodejs.org/)
-[![Ink](https://img.shields.io/badge/UI-Ink-61DAFB?logo=react&logoColor=000)](https://github.com/vadimdemedes/ink)
 [![CI](https://img.shields.io/github/actions/workflow/status/aneeshpatne/weeklygrant/ci.yml?branch=main)](https://github.com/aneeshpatne/weeklygrant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/aneeshpatne/weeklygrant)](LICENSE)
 
@@ -130,7 +129,8 @@ between recent fitted values.
 The interactive estimate runs in a worker thread so the dashboard remains
 responsive while files are scanned. The full JSON report also includes pricing
 sources, rate-card mode, scanned-file and event counts, measurement pairs,
-dashboard series, and the resolved Codex home.
+dashboard series, per-model usage series, and the resolved Codex home. The
+estimate TUI skips the per-model usage series to keep the worker payload small.
 
 ## Develop locally
 
@@ -150,10 +150,11 @@ npm run build
 npm pack --dry-run
 ```
 
-The project uses TypeScript, Node.js 22+, React, and Ink. The estimator lives in
-`src/lib/codex-grant.ts`; CLI and TUI code lives in `src/bin/`. Tests use Node's
-built-in test runner through tsx. Contribution and synthetic-fixture guidelines
-are in [CONTRIBUTING.md](CONTRIBUTING.md).
+The project uses TypeScript and Node.js 22+ with no runtime dependencies. The
+estimator lives in `src/lib/codex-grant.ts`; the CLI and the zero-dep TUI live in
+`src/bin/` (`term.ts` plus `tui.ts`). Tests use Node's built-in test runner
+through tsx. Contribution and synthetic-fixture guidelines are in
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

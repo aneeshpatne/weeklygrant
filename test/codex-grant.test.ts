@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
+  bucketSeries,
+  buildCostLanes,
   buildModelUsageSeries,
+  costInWindow,
+  estimateCodexGrant,
   estimateGrantFromLogs,
   hasGraphableSeries,
   isStableEstimate,
   loadRateCards,
+  parseLogFile,
   priceTokens,
   splitEpochs,
   summarizeModelUsage,
@@ -199,4 +207,120 @@ test("builds cumulative per-model usage series", () => {
     { timestampMs: 1_000, totalTokens: 14, apiValueUsd: 0.01 },
     { timestampMs: 2_000, totalTokens: 41, apiValueUsd: 0.03 },
   ]);
+});
+
+test("cost windows use prefix sums and ignore other quota ids", () => {
+  const lanes = buildCostLanes([
+    { timestampMs: 1_000, costUsd: 1, eligible: true, quotaLimitId: "codex" },
+    { timestampMs: 2_000, costUsd: 2, eligible: true, quotaLimitId: "other" },
+    { timestampMs: 3_000, costUsd: 4, eligible: true, quotaLimitId: null },
+    { timestampMs: 4_000, costUsd: 8, eligible: true, quotaLimitId: "codex" },
+  ]);
+  assert.equal(costInWindow(lanes, 1_000, 4_000, "codex"), 12);
+  assert.equal(costInWindow(lanes, 1_000, 3_000, "codex"), 4);
+  assert.equal(costInWindow(lanes, 0, 4_000, "other"), 6);
+});
+
+test("events on another quota id do not inflate the weekly fit", () => {
+  const result = estimateGrantFromLogs(
+    [
+      { timestampMs: 1_500, costUsd: 0.42, eligible: true, quotaLimitId: "codex" },
+      { timestampMs: 1_600, costUsd: 50, eligible: true, quotaLimitId: "other" },
+    ],
+    [observation(1_000, 0), observation(2_000, 1)],
+  );
+  assert.equal(result.rawUsd, 42);
+});
+
+test("bucketSeries keeps the last point in each time bucket", () => {
+  const points = Array.from({ length: 20 }, (_, index) => ({ timestampMs: index, value: index }));
+  const result = bucketSeries(points, 4);
+  assert.equal(result.length, 4);
+  assert.equal(result[0].timestampMs, 4);
+  assert.equal(result.at(-1).timestampMs, 19);
+});
+
+test("estimate series is bucketed when the history is long", () => {
+  const events = [{ timestampMs: 1_500, costUsd: 0.5, eligible: true, quotaLimitId: "codex" }];
+  const observations = [
+    observation(1_000, 0),
+    observation(2_000, 1),
+    ...Array.from({ length: 2_000 }, (_, index) => observation(3_000 + index, 1 + index * 0.0001)),
+  ];
+  const result = estimateGrantFromLogs(events, observations);
+  assert.equal(result.validPairs, 1);
+  assert.equal(result.series.length <= 1_000, true);
+  assert.equal(result.series.length >= 2, true);
+});
+
+test("buildModelUsageSeries caps each model to maxPoints", () => {
+  const events = Array.from({ length: 50 }, (_, index) => ({
+    timestampMs: index,
+    model: "gpt-5.2-codex",
+    uncachedInput: 1,
+    cachedInput: 0,
+    billedOutput: 0,
+    eligible: true,
+    costUsd: 0.01,
+  }));
+  const result = buildModelUsageSeries(events, 10);
+  assert.equal(result.length, 10);
+  assert.equal(result.at(-1).totalTokens, 50);
+});
+
+test("parseLogFile uses the provided mtime fallback and reads token deltas", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-jsonl-"));
+  const file = path.join(dir, "session.jsonl");
+  fs.writeFileSync(file, [
+    JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.2-codex" } }),
+    JSON.stringify({
+      type: "token_count",
+      payload: {
+        info: { total_token_usage: { input_tokens: 100, cached_input_tokens: 20, output_tokens: 5 } },
+        rate_limits: { limit_id: "codex", primary: { window_minutes: 10_080, used_percent: 1, resets_at: 200_000 } },
+      },
+    }),
+    "",
+  ].join("\n"));
+  const parsed = parseLogFile(file, 50_000, fs.statSync(file).size);
+  assert.equal(parsed.events.length, 1);
+  assert.equal(parsed.events[0].timestampMs, 50_000);
+  assert.equal(parsed.events[0].uncachedInput, 80);
+  assert.equal(parsed.observations.length, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("parseLogFile streams a file larger than 256 KiB and survives a line that spans chunks", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-stream-"));
+  const file = path.join(dir, "session.jsonl");
+  const token = (input) => JSON.stringify({
+    type: "token_count",
+    timestamp: 1_000,
+    payload: { info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: 1 } } },
+  });
+  const noise = JSON.stringify({ type: "noise", blob: "x".repeat(80_000) });
+  const filler = Array.from({ length: 2_000 }, () => noise);
+  fs.writeFileSync(file, [JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.2-codex" } }), token(10), ...filler, token(25)].join("\n"));
+  assert.equal(fs.statSync(file).size > 256 * 1024, true);
+  const parsed = parseLogFile(file);
+  assert.equal(parsed.events.length, 2);
+  assert.equal(parsed.events[0].uncachedInput, 10);
+  assert.equal(parsed.events[1].uncachedInput, 15);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("estimateCodexGrant skips usage series unless requested", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-home-"));
+  fs.mkdirSync(path.join(root, "sessions"));
+  const file = path.join(root, "sessions", "session.jsonl");
+  fs.writeFileSync(file, `${JSON.stringify({
+    type: "token_count",
+    timestamp: 1_000,
+    payload: { info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 1 } } },
+  })}\n`);
+  const skipped = await estimateCodexGrant({ home: root, noNetwork: true });
+  const included = await estimateCodexGrant({ home: root, noNetwork: true, includeUsageSeries: true });
+  assert.deepEqual(skipped.modelUsageSeries, []);
+  assert.equal(included.modelUsageSeries.length, 1);
+  fs.rmSync(root, { recursive: true, force: true });
 });
