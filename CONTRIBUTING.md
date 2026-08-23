@@ -18,7 +18,8 @@ npm run dev -- --home /path/to/synthetic/.codex --no-network
 Add tests for estimator changes, especially pricing, reset detection, interval
 pairing, and privacy-sensitive output. Use synthetic JSONL fixtures only. Keep
 `--json` stable and non-interactive, and ensure the TUI remains usable in narrow
-terminals.
+terminals. The interactive UI is `src/bin/term.ts` plus `src/bin/tui.ts` and must
+stay free of runtime dependencies.
 
 Before submitting a change, run tests, type checks, a build, and
 `npm pack --dry-run`.

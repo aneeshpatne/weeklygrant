@@ -4,6 +4,11 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.1.0
+
+- Zero runtime dependencies: the Ink/React TUI is now a small Node-builtin renderer.
+- npm package no longer ships TypeScript declaration files or source maps.
+- `weeklygrant version` reads `package.json` from the package root, so published installs print the version.
 - Low-confidence TUI still graphs measured history when two or more points exist; the headline estimate stays a dash until medium or high confidence.
 
 ## 1.0.7

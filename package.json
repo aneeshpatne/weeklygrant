@@ -1,6 +1,6 @@
 {
   "name": "weeklygrant",
-  "version": "1.0.7",
+  "version": "1.1.0",
   "description": "Estimate the API-equivalent value of a weekly Codex grant from local session logs.",
   "bin": {
     "weeklygrant": "./dist/bin/cli.js"
@@ -40,13 +40,8 @@
   "engines": {
     "node": ">=22"
   },
-  "dependencies": {
-    "ink": "^7.1.1",
-    "react": "^19.2.8"
-  },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "@types/react": "^19.2.18",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import { estimateCodexGrant } from "../lib/codex-grant.js";
-
-const require = createRequire(import.meta.url);
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -31,7 +29,7 @@ Options:
 }
 
 if (command === "version" || command === "-v" || command === "--version") {
-  const pkg = require("../package.json");
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
   console.log(pkg.version);
   process.exit(0);
 }
