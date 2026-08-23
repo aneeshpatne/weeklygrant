@@ -1,7 +1,7 @@
+import { compactFormat, moneyFormat } from "./format.js";
+
 function usd(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(value);
+  return moneyFormat.format(value);
 }
 
 function setBraille(pixels: number[][], x: number, y: number) {
@@ -52,7 +52,7 @@ export function lineChart(points, field: string, width: number, height: number, 
     if (index === 0) setBraille(pixels, point.x, point.y);
     else drawLine(pixels, coordinates[index - 1].x, coordinates[index - 1].y, point.x, point.y);
   });
-  const format = (value: number) => prefix === "$" ? usd(value) : prefix === "%" ? `${value.toFixed(1)}%` : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+  const format = (value: number) => prefix === "$" ? usd(value) : prefix === "%" ? `${value.toFixed(1)}%` : compactFormat.format(value);
   const middle = min + span / 2;
   const labelWidth = Math.max(format(min).length, format(max).length, format(middle).length);
   return pixels.map((row, index) => {

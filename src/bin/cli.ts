@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { estimateCodexGrant } from "../lib/codex-grant.js";
+import { integerFormat, moneyFormat } from "../lib/format.js";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -51,11 +52,11 @@ function option(name) {
 }
 
 function money(value) {
-  return value == null ? "Not enough data" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
+  return value == null ? "Not enough data" : moneyFormat.format(value);
 }
 
 function integer(value) {
-  return new Intl.NumberFormat("en-US").format(value);
+  return integerFormat.format(value);
 }
 
 function printUsage(report) {
@@ -89,7 +90,12 @@ async function main() {
   const daysValue = option("--days");
   const days = daysValue === undefined ? Infinity : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
-  const estimateOptions = { home: option("--home"), days, noNetwork: args.includes("--no-network") };
+  const estimateOptions = {
+    home: option("--home"),
+    days,
+    noNetwork: args.includes("--no-network"),
+    includeUsageSeries: command === "usage" || args.includes("--json"),
+  };
   if (process.stdout.isTTY && !args.includes("--json")) {
     const { runTui } = await import("./tui.js");
     await runTui(estimateOptions, command === "usage" ? "usage" : "estimate");

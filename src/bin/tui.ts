@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
 import { lineChart } from "../lib/chart.js";
+import { dateFormat, integerFormat, moneyFormat } from "../lib/format.js";
 import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
 import {
   attach,
@@ -55,9 +56,7 @@ export type TuiState = {
 };
 
 export function usd(value) {
-  return value == null ? "—" : new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(value);
+  return value == null ? "—" : moneyFormat.format(value);
 }
 
 export function relativeTime(value) {
@@ -233,7 +232,7 @@ function renderDashboard(state: TuiState, width: number) {
     ...(!estimateReady ? ["", style(`Estimate withheld · ${withheldReason(report)}.`, { color: "yellow" })] : []),
     "",
     ...chartPanel(title, chart, metric === "grant" ? "green" : metric === "quota" ? "cyan" : "yellow",
-      new Date(points[0]?.timestampMs || Date.now()).toLocaleDateString(),
+      dateFormat.format(points[0]?.timestampMs || Date.now()),
       `${points.length} measurements`,
       "now",
       rangeIndex,
@@ -272,9 +271,9 @@ function renderUsage(state: TuiState, width: number) {
   const valueLabel = selected.pricedEvents ? `${usd(selected.apiValueUsd)}${selected.pendingEvents ? " partial" : ""}` : "unpriced";
   const cards = wrapCards([
     statCard("Model", selected.model, "cyan"),
-    statCard("Total tokens", selected.totalTokens.toLocaleString("en-US")),
+    statCard("Total tokens", integerFormat.format(selected.totalTokens)),
     statCard("API-equivalent value", valueLabel, selected.pricedEvents ? "green" : "yellow"),
-    statCard("Output tokens", selected.outputTokens.toLocaleString("en-US"), "yellow"),
+    statCard("Output tokens", integerFormat.format(selected.outputTokens), "yellow"),
   ], width, 1, { style: "round", borderColor: "gray", paddingX: 1, width: STAT_WIDTH });
   return [
     spaceBetween(style("weeklygrant usage", { bold: true, color: "cyan" }), style(`${models.length} models · ${report.filesScanned} session files`, { dim: true }), width),
@@ -282,13 +281,13 @@ function renderUsage(state: TuiState, width: number) {
     ...cards,
     "",
     ...chartPanel(metricTitle, chart, suffix === "$" ? "green" : "cyan",
-      new Date(points[0]?.timestampMs || Date.now()).toLocaleDateString(),
+      dateFormat.format(points[0]?.timestampMs || Date.now()),
       `${points.length} events`,
       rangeName,
       rangeIndex,
       panelWidth,
     ),
-    style(`Input ${selected.uncachedInputTokens.toLocaleString("en-US")} · Cached ${selected.cachedInputTokens.toLocaleString("en-US")} · Output ${selected.outputTokens.toLocaleString("en-US")}`, { dim: true }),
+    style(`Input ${integerFormat.format(selected.uncachedInputTokens)} · Cached ${integerFormat.format(selected.cachedInputTokens)} · Output ${integerFormat.format(selected.outputTokens)}`, { dim: true }),
     "",
     keys("usage"),
     style("API-equivalent planning value — not a Codex bill or credit balance.", { dim: true }),
@@ -465,7 +464,7 @@ async function runSession(term: Terminal, options, view: TuiView) {
 export async function runTui(options, view: TuiView = "estimate") {
   const term = attach();
   try {
-    await runSession(term, options, view);
+    await runSession(term, { ...options, includeUsageSeries: options.includeUsageSeries ?? view === "usage" }, view);
   } finally {
     term.detach();
   }

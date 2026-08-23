@@ -129,7 +129,8 @@ between recent fitted values.
 The interactive estimate runs in a worker thread so the dashboard remains
 responsive while files are scanned. The full JSON report also includes pricing
 sources, rate-card mode, scanned-file and event counts, measurement pairs,
-dashboard series, and the resolved Codex home.
+dashboard series, per-model usage series, and the resolved Codex home. The
+estimate TUI skips the per-model usage series to keep the worker payload small.
 
 ## Develop locally
 
