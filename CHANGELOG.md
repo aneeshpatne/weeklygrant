@@ -10,6 +10,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 - npm package no longer ships TypeScript declaration files or source maps.
 - `weeklygrant version` reads `package.json` from the package root, so published installs print the version.
 - Low-confidence TUI still graphs measured history when two or more points exist; the headline estimate stays a dash until medium or high confidence.
+- Estimation is linear in log events: prefix-sum cost windows, a single file mtime, overlapped pricing fetch, and usage-series built only for `usage`/`--json`.
 
 ## 1.0.7
 
