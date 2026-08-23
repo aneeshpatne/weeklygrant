@@ -6,7 +6,7 @@
     "weeklygrant": "./dist/bin/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/bin/cli.js', 0o755)\"",
     "start": "npm run build --silent && node dist/bin/cli.js",
     "dev": "tsx src/bin/cli.ts",
     "test": "node --import tsx --test test/*.test.ts",
@@ -14,11 +14,7 @@
     "prepack": "npm test && npm run check && npm run build"
   },
   "files": [
-    "dist",
-    "PRIVACY.md",
-    "SECURITY.md",
-    "CHANGELOG.md",
-    "CONTRIBUTING.md"
+    "dist"
   ],
   "keywords": [
     "codex",

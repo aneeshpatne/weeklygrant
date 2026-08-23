@@ -5,7 +5,8 @@ reports free of real prompts, credentials, session logs, and personal data.
 
 ## Development
 
-Requirements: Node.js 22 or newer and npm or Bun.
+Requirements: Node.js 22 or newer and npm or Bun. The committed lockfile is
+`package-lock.json`.
 
 ```bash
 npm ci
