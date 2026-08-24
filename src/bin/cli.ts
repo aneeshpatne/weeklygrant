@@ -112,7 +112,8 @@ async function main() {
     return;
   }
   console.log(money(report.headlineUsd));
-  console.log(`${report.label} · ${report.confidence} confidence · based on ${report.coveragePoints.toFixed(1)} quota points`);
+  const basis = Number.isFinite(report.matchedCoveragePoints) ? report.matchedCoveragePoints : report.coveragePoints;
+  console.log(`${report.label} · ${report.confidence} confidence · based on ${basis.toFixed(1)} quota points`);
   if (report.weeklyUsedPercent != null) console.log(`Quota used: ${report.weeklyUsedPercent.toFixed(1)}%`);
   console.log(`Observed spend: ${money(report.observedTokenCostUsd)} · Current signal: ${money(report.rawUsd)}`);
   console.log(`Measurements: ${report.validPairs} valid pairs, ${report.pricedEvents} priced events, ${report.pendingEvents} pending events`);

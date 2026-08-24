@@ -152,8 +152,23 @@ test("renderFrame prints the splash, dashboard, and usage copy", () => {
   assert.match(dash, /graph/);
   assert.equal(dash.includes("╰──────────────────────╯ ╰──────────────────────╯"), true);
 
+  const resetDash = stripAnsi(renderFrame(applyReport(createState("estimate"), report({
+    series: [
+      { timestampMs: Date.now() - 86_400_000, valueUsd: 40, usedPercent: 10, observedCostUsd: 4, epoch: 0, resetsAtMs: Date.now() - 3_600_000 },
+      { timestampMs: Date.now(), valueUsd: 42, usedPercent: 20, observedCostUsd: 8, epoch: 1 },
+    ],
+  })), 80).join("\n"));
+  assert.match(resetDash, /···/);
+
   const usage = stripAnsi(renderFrame(applyReport(createState("usage"), report()), 100).join("\n"));
   assert.match(usage, /weeklygrant usage/);
   assert.match(usage, /gpt-5\.2-codex/);
   assert.match(usage, /Total tokens/);
+
+  const star = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 0 }, 80).join("\n"));
+  const starNext = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 5 }, 80).join("\n"));
+  assert.match(star, /thank you/);
+  assert.match(star, /star the repo/);
+  assert.match(star, /[·.*oO@]/);
+  assert.notEqual(star, starNext);
 });

@@ -13,7 +13,6 @@ const MIN_PERCENT_DELTA = 0.5;
 const MIN_WEEK_USD = 1;
 const MAX_WEEK_USD = 25_000;
 const MEDIAN_SAMPLE_COUNT = 7;
-const ESTIMATE_SAMPLE_COUNT = 12;
 const LONG_CONTEXT_TOKENS = 272_000;
 const LINE_STREAM_BYTES = 256 * 1024;
 const READ_CHUNK = 64 * 1024;
@@ -402,6 +401,13 @@ export function weightedMedian(rates) {
   return sorted.at(-1).value;
 }
 
+function pooledWeekUsd(costUsd, percent) {
+  if (!(costUsd > 0) || !(percent > 0)) return null;
+  const value = costUsd / (percent / 100);
+  if (!Number.isFinite(value) || value < MIN_WEEK_USD || value > MAX_WEEK_USD) return null;
+  return value;
+}
+
 function classifyConfidence(validPairs, coverage, fitted) {
   if (validPairs < 1) return "none";
   const recent = fitted.filter((x) => x > 0).slice(-MEDIAN_SAMPLE_COUNT);
@@ -493,6 +499,8 @@ export function estimateGrantFromLogs(events, observations) {
     let anchorCost = costInWindow(lanes, first.timestampMs, anchor.timestampMs, first.limitId);
     const rates = [];
     const fittedValues = [];
+    let matchedCost = 0;
+    let matchedPercent = 0;
     let rawUsd = null;
     let previous = null;
     for (const current of epoch.slice(1)) {
@@ -509,11 +517,13 @@ export function estimateGrantFromLogs(events, observations) {
         else decision = "valid";
       }
       if (decision === "valid") {
+        matchedCost += costDelta;
+        matchedPercent += percentDelta;
         rates.push({ value: weekUsd, weight: Math.max(0.5, percentDelta) });
         rawUsd = weekUsd;
-        const fitted = weightedMedian(rates.slice(-ESTIMATE_SAMPLE_COUNT)) ?? weekUsd;
+        const fitted = pooledWeekUsd(matchedCost, matchedPercent) ?? weekUsd;
         fittedValues.push(fitted);
-        previous = { timestampMs: current.timestampMs, epoch: epochIndex, kind: "quote", valueUsd: fitted, rawUsd: weekUsd, usedPercent: current.usedPercent, observedCostUsd: currentCost };
+        previous = { timestampMs: current.timestampMs, epoch: epochIndex, kind: "quote", valueUsd: fitted, rawUsd: weekUsd, usedPercent: current.usedPercent, observedCostUsd: currentCost, resetsAtMs: current.resetsAtMs };
         series.push(previous);
         anchor = current;
         anchorCost = currentCost;
@@ -521,20 +531,21 @@ export function estimateGrantFromLogs(events, observations) {
         const unmatchedJump = costDelta <= 0 && percentDelta >= MIN_PERCENT_DELTA;
         if (decision === "rejected" || unmatchedJump) { anchor = current; anchorCost = currentCost; }
         if (previous) {
-          previous = { ...previous, timestampMs: current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: current.usedPercent, observedCostUsd: currentCost };
+          previous = { ...previous, timestampMs: current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: current.usedPercent, observedCostUsd: currentCost, resetsAtMs: current.resetsAtMs };
           series.push(previous);
         }
       }
     }
     active = {
       epoch, rates, fittedValues, rawUsd, validPairs: rates.length,
-      headlineUsd: weightedMedian(rates.slice(-ESTIMATE_SAMPLE_COUNT)) ?? rawUsd,
+      headlineUsd: pooledWeekUsd(matchedCost, matchedPercent) ?? rawUsd,
       coveragePoints: Math.max(0, epoch.at(-1).usedPercent - first.usedPercent),
+      matchedCoveragePoints: matchedPercent,
       observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId),
     };
   });
   const latest = active?.epoch.at(-1) ?? null;
-  const confidence = classifyConfidence(active?.validPairs ?? 0, active?.coveragePoints ?? 0, active?.fittedValues ?? []);
+  const confidence = classifyConfidence(active?.validPairs ?? 0, active?.matchedCoveragePoints ?? 0, active?.fittedValues ?? []);
   return {
     algorithm: WEEKLY_GRANT_VERSION,
     headlineUsd: active?.headlineUsd ?? null,
@@ -542,6 +553,7 @@ export function estimateGrantFromLogs(events, observations) {
     confidence,
     label: confidence === "medium" || confidence === "high" ? "Stable Weekly API Value" : "Early Weekly API Value",
     coveragePoints: active?.coveragePoints ?? 0,
+    matchedCoveragePoints: active?.matchedCoveragePoints ?? 0,
     weeklyUsedPercent: latest?.usedPercent ?? null,
     observedTokenCostUsd: active?.observedTokenCostUsd ?? 0,
     validPairs: active?.validPairs ?? 0,

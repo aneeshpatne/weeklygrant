@@ -1,5 +1,8 @@
 import { compactFormat, moneyFormat } from "./format.js";
 
+export const RESET_DOT = "·";
+export const RESET_MARK = "···";
+
 function usd(value: number) {
   return moneyFormat.format(value);
 }
@@ -30,34 +33,51 @@ function drawLine(pixels: number[][], x0: number, y0: number, x1: number, y1: nu
 }
 
 export function lineChart(points, field: string, width: number, height: number, prefix: string) {
-  const clean = points.map((point) => Number(point[field])).filter(Number.isFinite);
+  const clean = points.filter((point) => Number.isFinite(Number(point[field])));
   if (!clean.length) return ["No measurements in this range"];
   const cellWidth = Math.max(12, width);
   const pixelWidth = cellWidth * 2;
   const pixelHeight = height * 4;
-  const sampleCount = Math.min(pixelWidth, clean.length);
-  const sampled = Array.from({ length: sampleCount }, (_, index) => {
-    const source = sampleCount === 1 ? clean.length - 1 : Math.round(index * (clean.length - 1) / (sampleCount - 1));
-    return clean[source];
-  });
-  const min = Math.min(...sampled);
-  const max = Math.max(...sampled);
+  const values = clean.map((point) => Number(point[field]));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
   const span = max - min || 1;
+  const times = clean.map((point) => Number(point.timestampMs));
+  const timed = times.every(Number.isFinite);
+  const t0 = timed ? Math.min(...times) : 0;
+  const tSpan = timed ? Math.max(1, Math.max(...times) - t0) : Math.max(1, clean.length - 1);
   const pixels = Array.from({ length: height }, () => Array(cellWidth).fill(0));
-  const coordinates = sampled.map((value, index) => ({
-    x: sampleCount === 1 ? pixelWidth - 1 : Math.round(index * (pixelWidth - 1) / (sampleCount - 1)),
-    y: pixelHeight - 1 - Math.round((value - min) / span * (pixelHeight - 1)),
+  const coordinates = clean.map((point, index) => ({
+    x: timed
+      ? Math.round((Number(point.timestampMs) - t0) / tSpan * (pixelWidth - 1))
+      : (clean.length === 1 ? pixelWidth - 1 : Math.round(index * (pixelWidth - 1) / (clean.length - 1))),
+    y: pixelHeight - 1 - Math.round((Number(point[field]) - min) / span * (pixelHeight - 1)),
+    epoch: point.epoch,
+    resetsAtMs: Number(point.resetsAtMs),
   }));
+  const resetRanges: Array<[number, number]> = [];
   coordinates.forEach((point, index) => {
-    if (index === 0) setBraille(pixels, point.x, point.y);
-    else drawLine(pixels, coordinates[index - 1].x, coordinates[index - 1].y, point.x, point.y);
+    const previous = coordinates[index - 1];
+    if (!previous || point.epoch !== previous.epoch) {
+      setBraille(pixels, point.x, point.y);
+      if (previous && point.epoch !== previous.epoch) {
+        const left = Math.min(previous.x, point.x);
+        const right = Math.max(previous.x, point.x);
+        const leftCell = Math.min(cellWidth - 1, Math.max(0, Math.floor((left + 1) / 2)));
+        const rightCell = Math.min(cellWidth - 1, Math.max(0, Math.floor(Math.max(left + 1, right - 1) / 2)));
+        if (leftCell <= rightCell) resetRanges.push([leftCell, rightCell]);
+      }
+    } else drawLine(pixels, previous.x, previous.y, point.x, point.y);
   });
   const format = (value: number) => prefix === "$" ? usd(value) : prefix === "%" ? `${value.toFixed(1)}%` : compactFormat.format(value);
   const middle = min + span / 2;
   const labelWidth = Math.max(format(min).length, format(max).length, format(middle).length);
   return pixels.map((row, index) => {
     const axis = index === 0 ? format(max) : index === Math.floor(height / 2) ? format(middle) : index === height - 1 ? format(min) : "";
-    const graph = row.map((bits) => bits ? String.fromCodePoint(0x2800 + bits) : " ").join("");
+    const graph = row.map((bits, cellX) => {
+      if (resetRanges.some(([left, right]) => cellX >= left && cellX <= right)) return RESET_DOT;
+      return bits ? String.fromCodePoint(0x2800 + bits) : " ";
+    }).join("");
     return `${axis.padStart(labelWidth)} ${index === height - 1 ? "└" : "│"}${graph}`;
   });
 }

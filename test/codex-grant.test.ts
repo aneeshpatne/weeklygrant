@@ -92,6 +92,24 @@ test("an unmatched usage jump does not collapse the estimate", () => {
   );
   assert.equal(result.validPairs, 2);
   assert.equal(result.headlineUsd, 100);
+  assert.equal(result.matchedCoveragePoints, 2);
+  assert.equal(result.coveragePoints, 31);
+});
+
+test("headline pools matched cost over matched quota instead of median of slices", () => {
+  const events = [];
+  const observations = [observation(1_000, 0)];
+  for (let index = 1; index <= 8; index++) {
+    events.push(pricedEvent(1_000 + index * 1_000 - 500, 0.5));
+    observations.push(observation(1_000 + index * 1_000, index * 0.5));
+  }
+  events.push(pricedEvent(9_500, 6));
+  observations.push(observation(10_000, 8));
+  const result = estimateGrantFromLogs(events, observations);
+  assert.equal(result.headlineUsd, 125);
+  assert.equal(result.rawUsd, 150);
+  assert.equal(result.matchedCoveragePoints, 8);
+  assert.equal(result.series.filter((point) => point.kind === "quote").at(-1).valueUsd, 125);
 });
 
 test("a new epoch does not inherit confidence from the previous epoch", () => {

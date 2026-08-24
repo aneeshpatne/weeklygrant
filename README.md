@@ -122,9 +122,12 @@ a guessed rate.
 Token counters are cumulative, so weeklygrant prices the difference between
 events: uncached input, cached input, and billed output. It splits quota history
 into epochs when a weekly reset is detected, ignores small downward jitter, and
-derives the headline from a weighted median of recent valid cost/quota pairs.
-Confidence is based on the number of valid pairs, quota coverage, and agreement
-between recent fitted values.
+derives the headline from the pooled API-cost / matched-quota ratio (ratio of
+totals over slices that have both local cost and quota movement). The latest
+single slice is the current signal, not the headline. Confidence is based on
+the number of valid pairs, matched quota coverage, and agreement between recent
+fitted values. The grant graph is plotted against real time, breaks at weekly
+resets, and fills each reset gap with a dense dotted band.
 
 The interactive estimate runs in a worker thread so the dashboard remains
 responsive while files are scanned. The full JSON report also includes pricing

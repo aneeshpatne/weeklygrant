@@ -4,7 +4,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.2.0
+
 - npm Trusted Publishing via `.github/workflows/release.yml` (OIDC, no `NPM_TOKEN`); provenance is generated automatically on tagged releases.
+- Headline estimate is now the pooled API-cost / matched-quota ratio instead of a median of small slices, so early-week noise and post-reset dips no longer dominate.
+- Grant graph X-axis is wall-clock time, and lines break at weekly quota resets instead of connecting the previous week to the first new-week sample.
+- Grant, quota, and cost graphs fill each weekly reset gap with a dense magenta dotted band.
+- Star-nudge quit screen has an animated dotted star, a thank-you, and a boxed repo link.
 
 ## 1.1.0
 

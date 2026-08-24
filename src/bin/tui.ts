@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
-import { lineChart } from "../lib/chart.js";
+import { lineChart, RESET_DOT, RESET_MARK } from "../lib/chart.js";
 import { dateFormat, integerFormat, moneyFormat } from "../lib/format.js";
 import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
 import {
@@ -16,6 +16,7 @@ import {
   type Terminal,
   wrapCards,
   wrapText,
+  visibleWidth,
 } from "./term.js";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -38,6 +39,19 @@ const USAGE_METRICS: ReadonlyArray<readonly [string, string, string]> = [
   ["API-equivalent value", "apiValueUsd", "$"],
 ];
 const STAT_WIDTH = 24;
+const STAR_MASK = [
+  "          *          ",
+  "         ***         ",
+  "        *****        ",
+  "   ***************   ",
+  "     ***********     ",
+  "       *******       ",
+  "       ** * **       ",
+  "      **     **      ",
+  "     *         *     ",
+];
+const STAR_DOT_WIDTH = STAR_MASK[0].length;
+const STAR_GLYPHS = " .·*oO@";
 
 export type TuiView = "estimate" | "usage";
 export type TuiPhase = "loading" | "ready" | "error" | "leaving";
@@ -111,6 +125,40 @@ function statCard(label: string, value: string, color: Color = "white") {
   ];
 }
 
+function centerText(text: string, width: number) {
+  const w = visibleWidth(text);
+  if (w >= width) return text;
+  return `${" ".repeat(Math.floor((width - w) / 2))}${text}`;
+}
+
+function starGlyph(value: number) {
+  const index = Math.max(1, Math.min(STAR_GLYPHS.length - 1, Math.round(value * (STAR_GLYPHS.length - 1))));
+  return STAR_GLYPHS[index];
+}
+
+function dottedStarFrame(frame: number) {
+  const t = frame * 0.28;
+  const cx = (STAR_DOT_WIDTH - 1) / 2;
+  const cy = (STAR_MASK.length - 1) / 2;
+  return STAR_MASK.map((row, y) => [...row].map((cell, x) => {
+    const dx = x - cx;
+    const dy = (y - cy) * 2;
+    const dist = Math.hypot(dx, dy);
+    if (cell === " ") {
+      const spark = Math.sin(x * 1.9 + y * 2.3 + t * 2.4);
+      return spark > 0.985 ? (frame % 2 ? "·" : ".") : " ";
+    }
+    const wave = 0.5 + 0.5 * Math.sin(t * 1.6 - dist * 0.7);
+    const twinkle = 0.5 + 0.5 * Math.sin(t * 3.1 + x * 0.9 + y * 1.3);
+    return starGlyph(0.18 + wave * 0.62 + twinkle * 0.2);
+  }).join(""));
+}
+
+function colorChartLine(line: string, color: Color) {
+  if (!line.includes(RESET_DOT)) return style(line, { color });
+  return line.split(RESET_DOT).map((part, index) => `${index ? style(RESET_DOT, { color: "magenta" }) : ""}${style(part, { color })}`).join("");
+}
+
 function hint(pairs: Array<[string, string]>) {
   return pairs.flatMap(([key, label], index) => [
     ...(index ? [style("  ", {})] : []),
@@ -132,7 +180,7 @@ function chartPanel(title: string, chart: string[], color: Color, left: string, 
   const footer = spaceBetween(spaceBetween(style(left, { dim: true }), style(middle, { dim: true }), Math.floor(inner * 2 / 3)), style(right, { dim: true }), inner);
   return box([
     header,
-    ...chart.map((line) => style(line, { color })),
+    ...chart.map((line) => colorChartLine(line, color)),
     footer,
   ], { style: "round", borderColor: "cyan", paddingX: 1, width });
 }
@@ -166,11 +214,22 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
     return [style(`weeklygrant: ${state.error || "unknown error"}`, { color: "red" })];
   }
   if (screen === "star") {
+    const boxWidth = Math.min(width, 48);
+    const textWidth = Math.max(1, boxWidth - 6);
+    const showArt = textWidth >= STAR_DOT_WIDTH;
+    const art = showArt ? dottedStarFrame(state.spinner).map((line) => style(line, { color: "yellow" })) : [];
+    const inner = box([
+      ...art,
+      ...(showArt ? [""] : []),
+      style(centerText("thank you", showArt ? STAR_DOT_WIDTH : textWidth), { bold: true, color: "cyan" }),
+      "",
+      "If this was useful, star the repo.",
+      style(REPO_URL, { color: "cyan" }),
+    ], { style: "round", borderColor: "cyan", paddingX: 2, paddingY: 1, width: boxWidth });
     return [
       style("weeklygrant", { bold: true, color: "cyan" }),
       "",
-      "If this was useful, star the repo:",
-      style(`  ${REPO_URL}`, { color: "cyan" }),
+      ...inner,
       "",
       keys(screen),
     ];
@@ -211,6 +270,7 @@ function renderDashboard(state: TuiState, width: number) {
   const [rangeName, rangeMs] = RANGES[rangeIndex];
   const cutoff = Number.isFinite(rangeMs) ? Date.now() - rangeMs : -Infinity;
   const points = (report.series || []).filter((point) => point.timestampMs >= cutoff);
+  const epochCount = new Set(points.map((point) => point.epoch).filter((epoch) => epoch != null)).size;
   const chartWidth = Math.min(96, Math.max(20, width - 16));
   const chart = lineChart(points, field, chartWidth, 9, suffix);
   const panelWidth = Math.min(width, chartWidth + 16);
@@ -233,7 +293,7 @@ function renderDashboard(state: TuiState, width: number) {
     "",
     ...chartPanel(title, chart, metric === "grant" ? "green" : metric === "quota" ? "cyan" : "yellow",
       dateFormat.format(points[0]?.timestampMs || Date.now()),
-      `${points.length} measurements`,
+      `${points.length} measurements${epochCount > 1 ? ` · ${RESET_MARK} reset` : ""}`,
       "now",
       rangeIndex,
       panelWidth,
@@ -322,10 +382,15 @@ export function tickLoading(state: TuiState, elapsedMs: number): TuiState {
   };
 }
 
+export function tickStar(state: TuiState): TuiState {
+  if (state.phase !== "leaving") return state;
+  return { ...state, spinner: state.spinner + 1 };
+}
+
 function requestQuit(state: TuiState): { state: TuiState; actions: TuiAction[] } {
   const usedApp = state.phase === "ready";
   if (!usedApp || isStarNudgeHidden()) return { state, actions: ["quit"] };
-  return { state: { ...state, phase: "leaving" }, actions: [] };
+  return { state: { ...state, phase: "leaving", spinner: 0 }, actions: [] };
 }
 
 export function handleKey(state: TuiState, key: TermKey): { state: TuiState; actions: TuiAction[] } {
@@ -452,6 +517,9 @@ async function runSession(term: Terminal, options, view: TuiView) {
     const timer = setInterval(() => {
       if (state.phase === "loading") {
         state = tickLoading(state, Date.now() - loadingStarted);
+        paint();
+      } else if (state.phase === "leaving") {
+        state = tickStar(state);
         paint();
       }
     }, 80);

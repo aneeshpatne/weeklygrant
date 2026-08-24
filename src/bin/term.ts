@@ -7,7 +7,7 @@ const ELLIPSIS = "…";
 export const ROUND_BOX = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" } as const;
 export const DOUBLE_BOX = { tl: "╔", tr: "╗", bl: "╚", br: "╝", h: "═", v: "║" } as const;
 
-export type Color = "cyan" | "green" | "yellow" | "red" | "gray" | "white";
+export type Color = "cyan" | "green" | "yellow" | "red" | "magenta" | "gray" | "white";
 
 export type TermKey = {
   input: string;
