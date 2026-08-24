@@ -4,6 +4,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- npm Trusted Publishing via `.github/workflows/release.yml` (OIDC, no `NPM_TOKEN`); provenance is generated automatically on tagged releases.
+
 ## 1.1.0
 
 - Zero runtime dependencies: the Ink/React TUI is now a small Node-builtin renderer.
