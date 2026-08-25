@@ -10,7 +10,6 @@ import {
   truncate,
   visibleWidth,
   wrapCards,
-  wrapRow,
   wrapText,
 } from "../src/bin/term.js";
 

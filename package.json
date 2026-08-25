@@ -6,11 +6,12 @@
     "weeklygrant": "./dist/bin/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/bin/cli.js', 0o755)\"",
+    "build": "tsc --noEmit && node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && esbuild src/bin/cli.ts src/bin/estimate-worker.ts --bundle --splitting --format=esm --platform=node --target=node22 --minify --outdir=dist --outbase=src --entry-names=[dir]/[name] --chunk-names=bin/chunk-[hash] && node -e \"require('node:fs').chmodSync('dist/bin/cli.js', 0o755)\"",
     "start": "npm run build --silent && node dist/bin/cli.js",
     "dev": "tsx src/bin/cli.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "check": "tsc --noEmit",
+    "check:size": "node scripts/check-package-size.mjs",
     "prepack": "npm test && npm run check && npm run build"
   },
   "files": [
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }
