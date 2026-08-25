@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.2.1
+
+- Session JSONL scan peeks each line's event type and skips conversation payloads instead of `JSON.parse`-ing them, so large `response_item` / `item_completed` lines no longer dominate startup.
+
 ## 1.2.0
 
 - npm Trusted Publishing via `.github/workflows/release.yml` (OIDC, no `NPM_TOKEN`); provenance is generated automatically on tagged releases.

@@ -14,8 +14,9 @@ const MIN_WEEK_USD = 1;
 const MAX_WEEK_USD = 25_000;
 const MEDIAN_SAMPLE_COUNT = 7;
 const LONG_CONTEXT_TOKENS = 272_000;
-const LINE_STREAM_BYTES = 256 * 1024;
-const READ_CHUNK = 64 * 1024;
+const READ_CHUNK = 1024 * 1024;
+const TYPE_PEEK_BYTES = 256;
+const PARSE_LINE_TYPES = new Set(["token_count", "session_meta", "turn_context", "thread_settings_applied", "threadSettings"]);
 
 type RateTier = {
   threshold: number;
@@ -230,35 +231,111 @@ function weeklyObservation(rateLimits, timestamp, sessionId) {
   };
 }
 
-function decodeLine(parts: Buffer[], extra: Buffer, extraStart: number, extraEnd: number) {
-  if (!parts.length) return extra.toString("utf8", extraStart, extraEnd);
-  parts.push(extra.subarray(extraStart, extraEnd));
-  return Buffer.concat(parts).toString("utf8");
+function typeFromPrefix(head: string) {
+  let from = 0;
+  let first = null;
+  while (from < head.length) {
+    const key = head.indexOf('"type"', from);
+    if (key < 0) break;
+    let index = key + 6;
+    while (index < head.length && (head[index] === " " || head[index] === "\t")) index++;
+    if (head[index] !== ":") {
+      from = key + 1;
+      continue;
+    }
+    index++;
+    while (index < head.length && (head[index] === " " || head[index] === "\t")) index++;
+    if (head[index] !== '"') {
+      from = key + 1;
+      continue;
+    }
+    index++;
+    const end = head.indexOf('"', index);
+    if (end < 0) break;
+    const value = head.slice(index, end);
+    if (first == null) {
+      if (value !== "event_msg") return value;
+      first = value;
+    } else return value;
+    from = end + 1;
+  }
+  return first;
 }
 
-function* readLines(file: string, size: number) {
-  if (size <= LINE_STREAM_BYTES) {
-    yield* fs.readFileSync(file, "utf8").split(/\r?\n/);
-    return;
-  }
+function shouldParseLine(head: string) {
+  const type = typeFromPrefix(head);
+  return !type || type === "event_msg" || PARSE_LINE_TYPES.has(type);
+}
+
+function prefixOf(parts: Buffer[]) {
+  if (!parts.length) return "";
+  if (parts.length === 1) return parts[0].toString("latin1", 0, Math.min(TYPE_PEEK_BYTES, parts[0].length));
+  return Buffer.concat(parts).toString("latin1", 0, TYPE_PEEK_BYTES);
+}
+
+function decodeParts(parts: Buffer[]) {
+  return parts.length === 1 ? parts[0].toString("utf8") : Buffer.concat(parts).toString("utf8");
+}
+
+function stripTrailingCr(parts: Buffer[]) {
+  const last = parts.at(-1);
+  if (!last?.length || last[last.length - 1] !== 13) return;
+  parts[parts.length - 1] = last.subarray(0, last.length - 1);
+}
+
+function* readCandidateLines(file: string) {
   const fd = fs.openSync(file, "r");
   try {
     const buf = Buffer.allocUnsafe(READ_CHUNK);
+    let mode = "peek";
     let parts: Buffer[] = [];
+    let peekBytes = 0;
     while (true) {
       const n = fs.readSync(fd, buf, 0, buf.length, null);
       if (n === 0) break;
-      let start = 0;
-      for (let i = 0; i < n; i++) {
-        if (buf[i] !== 10) continue;
-        const end = i > start && buf[i - 1] === 13 ? i - 1 : i;
-        yield decodeLine(parts, buf, start, end);
+      const chunk = buf.subarray(0, n); // indexOf must not see allocUnsafe tail bytes
+      let offset = 0;
+      while (offset < n) {
+        if (mode === "skip") {
+          const nl = chunk.indexOf(10, offset);
+          if (nl < 0) break;
+          offset = nl + 1;
+          mode = "peek";
+          continue;
+        }
+        const nl = chunk.indexOf(10, offset);
+        if (nl < 0) {
+          const slice = Buffer.from(chunk.subarray(offset));
+          parts.push(slice);
+          peekBytes += slice.length;
+          if (mode === "peek" && peekBytes >= TYPE_PEEK_BYTES) {
+            if (shouldParseLine(prefixOf(parts))) mode = "keep";
+            else {
+              mode = "skip";
+              parts = [];
+              peekBytes = 0;
+            }
+          }
+          break;
+        }
+        const lineEnd = nl > offset && chunk[nl - 1] === 13 ? nl - 1 : nl;
+        if (nl === offset) stripTrailingCr(parts);
+        if (mode === "keep") {
+          if (nl > offset) parts.push(Buffer.from(chunk.subarray(offset, lineEnd)));
+          yield decodeParts(parts);
+        } else if (parts.length) {
+          if (nl > offset) parts.push(Buffer.from(chunk.subarray(offset, lineEnd)));
+          if (shouldParseLine(prefixOf(parts))) yield decodeParts(parts);
+        } else if (lineEnd > offset && shouldParseLine(chunk.toString("latin1", offset, Math.min(offset + TYPE_PEEK_BYTES, lineEnd)))) {
+          yield chunk.toString("utf8", offset, lineEnd);
+        }
         parts = [];
-        start = i + 1;
+        peekBytes = 0;
+        mode = "peek";
+        offset = nl + 1;
       }
-      if (start < n) parts.push(Buffer.from(buf.subarray(start, n)));
     }
-    if (parts.length) yield Buffer.concat(parts).toString("utf8");
+    if (mode === "keep" || (mode === "peek" && parts.length && shouldParseLine(prefixOf(parts)))) yield decodeParts(parts);
   } finally {
     fs.closeSync(fd);
   }
@@ -278,7 +355,8 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
   let previous = { uncachedInput: 0, cachedInput: 0, billedOutput: 0, reasoning: 0 };
   const events = [];
   const observations = [];
-  for (const line of readLines(file, fileSize)) {
+  if (!fileSize) return { events, observations };
+  for (const line of readCandidateLines(file)) {
     if (!line.trim()) continue;
     let object;
     try { object = JSON.parse(line); } catch { continue; }

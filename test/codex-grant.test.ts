@@ -327,6 +327,64 @@ test("parseLogFile streams a file larger than 256 KiB and survives a line that s
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("parseLogFile skips conversation payloads and reads event_msg token counts", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-skip-"));
+  const file = path.join(dir, "session.jsonl");
+  const token = (input) => JSON.stringify({
+    timestamp: "2026-01-01T00:00:00.000Z",
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: 1 } },
+    },
+  });
+  const discarded = JSON.stringify({ type: "response_item", payload: { blob: "x".repeat(1_500_000) } });
+  fs.writeFileSync(file, [
+    JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.2-codex" } }),
+    token(10),
+    discarded,
+    JSON.stringify({ type: "event_msg", payload: { type: "item_completed", blob: "y".repeat(8_000) } }),
+    token(25),
+  ].join("\n"));
+  const parsed = parseLogFile(file);
+  assert.equal(parsed.events.length, 2);
+  assert.equal(parsed.events[0].uncachedInput, 10);
+  assert.equal(parsed.events[1].uncachedInput, 15);
+  assert.equal(parsed.events[0].model, "gpt-5.2-codex");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("parseLogFile keeps a session_meta line that spans read chunks", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-keep-span-"));
+  const file = path.join(dir, "session.jsonl");
+  fs.writeFileSync(file, [
+    JSON.stringify({ type: "session_meta", payload: { id: "span-session", blob: "z".repeat(1_200_000) } }),
+    JSON.stringify({
+      type: "token_count",
+      timestamp: 1_000,
+      payload: { info: { total_token_usage: { input_tokens: 4, cached_input_tokens: 0, output_tokens: 1 } } },
+    }),
+  ].join("\n"));
+  const parsed = parseLogFile(file);
+  assert.equal(parsed.events.length, 1);
+  assert.equal(parsed.events[0].sessionId, "span-session");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("parseLogFile accepts CRLF and spaced type keys", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-crlf-"));
+  const file = path.join(dir, "session.jsonl");
+  fs.writeFileSync(file, [
+    '{ "type" : "turn_context", "payload": { "model": "gpt-5.2-codex" } }',
+    '{ "type" : "token_count", "timestamp": 1000, "payload": { "info": { "total_token_usage": { "input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 1 } } } }',
+  ].join("\r\n"));
+  const parsed = parseLogFile(file, 50_000);
+  assert.equal(parsed.events.length, 1);
+  assert.equal(parsed.events[0].uncachedInput, 10);
+  assert.equal(parsed.events[0].model, "gpt-5.2-codex");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("estimateCodexGrant skips usage series unless requested", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-home-"));
   fs.mkdirSync(path.join(root, "sessions"));
