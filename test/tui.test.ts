@@ -35,7 +35,7 @@ function key(input: string, extra: Record<string, unknown> = {}) {
 
 function report(overrides = {}) {
   return {
-    algorithm: "weekly-grant-estimate",
+    algorithm: "weekly-grant-estimate-v2",
     headlineUsd: 42,
     rawUsd: 40,
     confidence: "high",
@@ -53,7 +53,7 @@ function report(overrides = {}) {
     ],
     filesScanned: 3,
     pricingSources: ["official"],
-    rateCardMode: "offline",
+    rateCardMode: "bundled-official",
     modelUsage: [{
       model: "gpt-5.2-codex",
       uncachedInputTokens: 1000,
@@ -72,10 +72,10 @@ function report(overrides = {}) {
   };
 }
 
-test("loading, splash, dashboard, usage, and star screens are selected from state", () => {
+test("loading, splash, dashboard, usage, and thank-you screens are selected from state", () => {
   assert.equal(visibleScreen(createState("estimate")), "loading");
   assert.equal(visibleScreen({ ...createState(), phase: "error", error: "boom" }), "error");
-  assert.equal(visibleScreen({ ...createState(), phase: "leaving" }), "star");
+  assert.equal(visibleScreen({ ...createState(), phase: "leaving" }), "thanks");
 
   const empty = applyReport(createState("estimate"), report({
     confidence: "none",
@@ -165,10 +165,10 @@ test("renderFrame prints the splash, dashboard, and usage copy", () => {
   assert.match(usage, /gpt-5\.2-codex/);
   assert.match(usage, /Total tokens/);
 
-  const star = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 0 }, 80).join("\n"));
-  const starNext = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 5 }, 80).join("\n"));
-  assert.match(star, /thank you/);
-  assert.match(star, /star the repo/);
-  assert.match(star, /[·.*oO@]/);
-  assert.notEqual(star, starNext);
+  const thanks = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 0 }, 80).join("\n"));
+  const thanksNext = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 5 }, 80).join("\n"));
+  assert.match(thanks, /thank you/);
+  assert.match(thanks, /star the repo/);
+  assert.match(thanks, /_\.\.\._/);
+  assert.notEqual(thanks, thanksNext);
 });

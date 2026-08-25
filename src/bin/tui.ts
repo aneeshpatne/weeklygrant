@@ -39,23 +39,22 @@ const USAGE_METRICS: ReadonlyArray<readonly [string, string, string]> = [
   ["API-equivalent value", "apiValueUsd", "$"],
 ];
 const STAT_WIDTH = 24;
-const STAR_MASK = [
-  "          *          ",
-  "         ***         ",
-  "        *****        ",
-  "   ***************   ",
-  "     ***********     ",
-  "       *******       ",
-  "       ** * **       ",
-  "      **     **      ",
-  "     *         *     ",
+const MOONLIT_WATER = [
+  "           _..._           ",
+  "         .'     '.         ",
+  "        /   .-.   \\        ",
+  "        |  (   )  |        ",
+  "         '. `-' .'         ",
+  "           `-.-'           ",
+  "  ~~~~      ~~~~~      ~~~ ",
+  "       ~~~       ~~~~      ",
+  " ~~~      ~~~~       ~~~   ",
 ];
-const STAR_DOT_WIDTH = STAR_MASK[0].length;
-const STAR_GLYPHS = " .·*oO@";
+const MOONLIT_WATER_WIDTH = MOONLIT_WATER[0].length;
 
 export type TuiView = "estimate" | "usage";
 export type TuiPhase = "loading" | "ready" | "error" | "leaving";
-export type TuiScreen = "loading" | "error" | "splash" | "dashboard" | "usage" | "star";
+export type TuiScreen = "loading" | "error" | "splash" | "dashboard" | "usage" | "thanks";
 
 export type TuiState = {
   view: TuiView;
@@ -84,7 +83,8 @@ export function relativeTime(value) {
 
 export function withheldReason(report) {
   const needsPairs = Math.max(0, 2 - report.validPairs);
-  const needsCoverage = Math.max(0, 5 - report.coveragePoints);
+  const coverage = Number.isFinite(report.matchedCoveragePoints) ? report.matchedCoveragePoints : report.coveragePoints;
+  const needsCoverage = Math.max(0, 5 - coverage);
   if (needsPairs > 0) return `Need at least ${needsPairs} more valid measurement${needsPairs === 1 ? "" : "s"}`;
   if (needsCoverage > 0) return `Need about ${needsCoverage.toFixed(1)} more quota points of coverage`;
   return "Need a more stable fit across measurements";
@@ -107,7 +107,7 @@ export function createState(view: TuiView = "estimate"): TuiState {
 export function visibleScreen(state: TuiState): TuiScreen {
   if (state.phase === "loading") return "loading";
   if (state.phase === "error") return "error";
-  if (state.phase === "leaving") return "star";
+  if (state.phase === "leaving") return "thanks";
   if (state.view === "usage") return "usage";
   if (!isStableEstimate(state.report?.confidence) && !hasGraphableSeries(state.report?.series)) return "splash";
   return "dashboard";
@@ -131,26 +131,10 @@ function centerText(text: string, width: number) {
   return `${" ".repeat(Math.floor((width - w) / 2))}${text}`;
 }
 
-function starGlyph(value: number) {
-  const index = Math.max(1, Math.min(STAR_GLYPHS.length - 1, Math.round(value * (STAR_GLYPHS.length - 1))));
-  return STAR_GLYPHS[index];
-}
-
-function dottedStarFrame(frame: number) {
-  const t = frame * 0.28;
-  const cx = (STAR_DOT_WIDTH - 1) / 2;
-  const cy = (STAR_MASK.length - 1) / 2;
-  return STAR_MASK.map((row, y) => [...row].map((cell, x) => {
-    const dx = x - cx;
-    const dy = (y - cy) * 2;
-    const dist = Math.hypot(dx, dy);
-    if (cell === " ") {
-      const spark = Math.sin(x * 1.9 + y * 2.3 + t * 2.4);
-      return spark > 0.985 ? (frame % 2 ? "·" : ".") : " ";
-    }
-    const wave = 0.5 + 0.5 * Math.sin(t * 1.6 - dist * 0.7);
-    const twinkle = 0.5 + 0.5 * Math.sin(t * 3.1 + x * 0.9 + y * 1.3);
-    return starGlyph(0.18 + wave * 0.62 + twinkle * 0.2);
+function moonlitWaterFrame(frame: number) {
+  return MOONLIT_WATER.map((row, y) => y < 6 ? row : [...row].map((cell, x) => {
+    if (cell !== "~") return cell;
+    return (x + y + frame) % 4 < 2 ? "~" : "-";
   }).join(""));
 }
 
@@ -167,16 +151,22 @@ function hint(pairs: Array<[string, string]>) {
   ]).join("");
 }
 
-function rangeTabs(rangeIndex: number) {
-  return RANGES.map(([name], index) => {
+function rangesFor(view: TuiView, report: any): ReadonlyArray<readonly [string, number]> {
+  if (view === "usage" || !Number.isFinite(report?.scanWindowDays)) return RANGES;
+  const availableMs = report.scanWindowDays * 86_400_000;
+  return RANGES.filter(([, rangeMs]) => Number.isFinite(rangeMs) && rangeMs <= availableMs);
+}
+
+function rangeTabs(rangeIndex: number, ranges = RANGES) {
+  return ranges.map(([name], index) => {
     const label = style(name, index === rangeIndex ? { color: "cyan", bold: true } : { color: "gray" });
     return `${index ? "  " : ""}${label}`;
   }).join("");
 }
 
-function chartPanel(title: string, chart: string[], color: Color, left: string, middle: string, right: string, rangeIndex: number, width: number) {
+function chartPanel(title: string, chart: string[], color: Color, left: string, middle: string, right: string, rangeIndex: number, width: number, ranges = RANGES) {
   const inner = Math.max(12, width - 4);
-  const header = spaceBetween(style(title, { bold: true }), rangeTabs(rangeIndex), inner);
+  const header = spaceBetween(style(title, { bold: true }), rangeTabs(rangeIndex, ranges), inner);
   const footer = spaceBetween(spaceBetween(style(left, { dim: true }), style(middle, { dim: true }), Math.floor(inner * 2 / 3)), style(right, { dim: true }), inner);
   return box([
     header,
@@ -189,7 +179,7 @@ function keys(screen: TuiScreen) {
   if (screen === "splash") return hint([["r", "rescan"], ["q", "quit"]]);
   if (screen === "usage") return hint([["↑/↓", "model"], ["←/→", "metric"], ["-/+", "range"], ["q", "quit"]]);
   if (screen === "dashboard") return hint([["←/→", "graph"], ["↑/↓", "range"], ["r", "rescan"], ["q", "quit"]]);
-  if (screen === "star") return hint([["s", "open"], ["n", "don't show again"], ["q", "quit"]]);
+  if (screen === "thanks") return hint([["s", "open"], ["n", "don't show again"], ["q", "quit"]]);
   return hint([["q", "quit"]]);
 }
 
@@ -207,21 +197,21 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
       style("weeklygrant", { bold: true, color: "cyan" }),
       "",
       `${style(`${frame} `, { color: "cyan" })}Scanning Codex sessions and pricing tokens${style(`  ${state.seconds}s`, { dim: true })}`,
-      style("Loading public rate cards and pairing token cost with weekly quota…", { dim: true }),
+      style("Pairing token cost from official rate cards with weekly quota…", { dim: true }),
     ];
   }
   if (screen === "error") {
     return [style(`weeklygrant: ${state.error || "unknown error"}`, { color: "red" })];
   }
-  if (screen === "star") {
+  if (screen === "thanks") {
     const boxWidth = Math.min(width, 48);
     const textWidth = Math.max(1, boxWidth - 6);
-    const showArt = textWidth >= STAR_DOT_WIDTH;
-    const art = showArt ? dottedStarFrame(state.spinner).map((line) => style(line, { color: "yellow" })) : [];
+    const showArt = textWidth >= MOONLIT_WATER_WIDTH;
+    const art = showArt ? moonlitWaterFrame(state.spinner).map((line, index) => style(line, { color: index < 6 ? "cyan" : "gray" })) : [];
     const inner = box([
       ...art,
       ...(showArt ? [""] : []),
-      style(centerText("thank you", showArt ? STAR_DOT_WIDTH : textWidth), { bold: true, color: "cyan" }),
+      style(centerText("thank you", showArt ? MOONLIT_WATER_WIDTH : textWidth), { bold: true, color: "cyan" }),
       "",
       "If this was useful, star the repo.",
       style(REPO_URL, { color: "cyan" }),
@@ -264,10 +254,11 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
 function renderDashboard(state: TuiState, width: number) {
   const report = state.report;
   const estimateReady = isStableEstimate(report.confidence);
+  const ranges = rangesFor(state.view, report);
   const metricIndex = ((state.metricIndex % METRICS.length) + METRICS.length) % METRICS.length;
-  const rangeIndex = ((state.rangeIndex % RANGES.length) + RANGES.length) % RANGES.length;
+  const rangeIndex = ((state.rangeIndex % ranges.length) + ranges.length) % ranges.length;
   const [metric, title, field, suffix] = METRICS[metricIndex];
-  const [rangeName, rangeMs] = RANGES[rangeIndex];
+  const [, rangeMs] = ranges[rangeIndex];
   const cutoff = Number.isFinite(rangeMs) ? Date.now() - rangeMs : -Infinity;
   const points = (report.series || []).filter((point) => point.timestampMs >= cutoff);
   const epochCount = new Set(points.map((point) => point.epoch).filter((epoch) => epoch != null)).size;
@@ -297,10 +288,11 @@ function renderDashboard(state: TuiState, width: number) {
       "now",
       rangeIndex,
       panelWidth,
+      ranges,
     ),
     "",
     footer,
-    style(`${report.validPairs} valid pairs · ${report.pricedEvents} priced events · ${report.pendingEvents} pending · plan ${report.planType || "unknown"}`, { dim: true }),
+    style(`${report.validPairs} valid pairs${report.outlierPairs ? ` · ${report.outlierPairs} outliers` : ""} · ${report.pricedEvents} priced events · ${report.pendingEvents} pending · plan ${report.planType || "unknown"}`, { dim: true }),
     style(`Pricing: ${(report.pricingSources || []).join(" + ") || "unavailable"} · ${report.rateCardMode || "unknown mode"}`, { dim: true }),
     "",
     keys("dashboard"),
@@ -358,13 +350,14 @@ export type TuiAction = "quit" | "retry" | "open-repo" | "hide-nudge";
 
 export function applyReport(state: TuiState, report): TuiState {
   const estimateReady = isStableEstimate(report.confidence);
+  const ranges = rangesFor(state.view, report);
   return {
     ...state,
     phase: "ready",
     report,
     error: null,
     metricIndex: state.view === "usage" ? 0 : (estimateReady ? 0 : 1),
-    rangeIndex: state.view === "usage" ? 3 : (estimateReady ? 1 : 3),
+    rangeIndex: state.view === "usage" ? 3 : (estimateReady ? Math.min(1, ranges.length - 1) : ranges.length - 1),
     modelIndex: 0,
   };
 }
@@ -382,7 +375,7 @@ export function tickLoading(state: TuiState, elapsedMs: number): TuiState {
   };
 }
 
-export function tickStar(state: TuiState): TuiState {
+export function tickThankYou(state: TuiState): TuiState {
   if (state.phase !== "leaving") return state;
   return { ...state, spinner: state.spinner + 1 };
 }
@@ -395,7 +388,7 @@ function requestQuit(state: TuiState): { state: TuiState; actions: TuiAction[] }
 
 export function handleKey(state: TuiState, key: TermKey): { state: TuiState; actions: TuiAction[] } {
   const screen = visibleScreen(state);
-  if (screen === "star") {
+  if (screen === "thanks") {
     if (key.input === "n") return { state, actions: ["hide-nudge", "quit"] };
     if (key.input === "s") return { state, actions: ["open-repo"] };
     if (isQuitKey(key) || key.return) return { state, actions: ["quit"] };
@@ -407,11 +400,12 @@ export function handleKey(state: TuiState, key: TermKey): { state: TuiState; act
     return { state, actions: [] };
   }
   if (screen === "dashboard") {
+    const rangeCount = rangesFor(state.view, state.report).length;
     if (key.input === "r") return { state: { ...state, phase: "loading", report: null, error: null, spinner: 0, seconds: 0 }, actions: ["retry"] };
     if (key.leftArrow) return { state: { ...state, metricIndex: (state.metricIndex + METRICS.length - 1) % METRICS.length }, actions: [] };
     if (key.rightArrow) return { state: { ...state, metricIndex: (state.metricIndex + 1) % METRICS.length }, actions: [] };
-    if (key.upArrow) return { state: { ...state, rangeIndex: (state.rangeIndex + RANGES.length - 1) % RANGES.length }, actions: [] };
-    if (key.downArrow) return { state: { ...state, rangeIndex: (state.rangeIndex + 1) % RANGES.length }, actions: [] };
+    if (key.upArrow) return { state: { ...state, rangeIndex: (state.rangeIndex + rangeCount - 1) % rangeCount }, actions: [] };
+    if (key.downArrow) return { state: { ...state, rangeIndex: (state.rangeIndex + 1) % rangeCount }, actions: [] };
     return { state, actions: [] };
   }
   if (screen === "usage") {
@@ -459,10 +453,25 @@ async function runSession(term: Terminal, options, view: TuiView) {
   let loadingStarted = Date.now();
   let activeWorker: Worker | null = null;
   let closed = false;
+  let timer: NodeJS.Timeout | null = null;
 
   const paint = () => {
     if (closed) return;
     term.writeFrame(renderFrame(state, term.columns));
+  };
+
+  const scheduleTick = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (closed || (state.phase !== "loading" && state.phase !== "leaving")) return;
+    const delay = state.phase === "loading" ? 80 : 320;
+    timer = setTimeout(() => {
+      state = state.phase === "loading"
+        ? tickLoading(state, Date.now() - loadingStarted)
+        : tickThankYou(state);
+      paint();
+      scheduleTick();
+    }, delay);
   };
 
   const load = (gen: number) => {
@@ -475,11 +484,13 @@ async function runSession(term: Terminal, options, view: TuiView) {
         if (gen !== generation) return;
         state = applyReport(state, report);
         paint();
+        scheduleTick();
       },
       (error) => {
         if (gen !== generation) return;
         state = applyError(state, error?.message || String(error));
         paint();
+        scheduleTick();
       },
     );
   };
@@ -489,7 +500,7 @@ async function runSession(term: Terminal, options, view: TuiView) {
       if (closed) return;
       closed = true;
       generation += 1;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
       activeWorker?.terminate();
       resolve();
     };
@@ -512,19 +523,11 @@ async function runSession(term: Terminal, options, view: TuiView) {
       state = next.state;
       paint();
       applyActions(next.actions);
+      scheduleTick();
     });
     term.onResize(paint);
-    const timer = setInterval(() => {
-      if (state.phase === "loading") {
-        state = tickLoading(state, Date.now() - loadingStarted);
-        paint();
-      } else if (state.phase === "leaving") {
-        state = tickStar(state);
-        paint();
-      }
-    }, 80);
-
     paint();
+    scheduleTick();
     load(generation);
   });
 }
