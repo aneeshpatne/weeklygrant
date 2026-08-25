@@ -5,7 +5,7 @@
 **See the API-equivalent dollar value of your weekly Codex grant — from the logs already on your machine.**
 
 [![npm](https://img.shields.io/npm/v/weeklygrant)](https://www.npmjs.com/package/weeklygrant)
-[![npm downloads](https://img.shields.io/npm/dm/weeklygrant.svg)](https://www.npmjs.com/package/weeklygrant)
+[![npm downloads](https://img.shields.io/npm/dt/weeklygrant.svg)](https://www.npmjs.com/package/weeklygrant)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=fff)](https://nodejs.org/)
 [![CI](https://img.shields.io/github/actions/workflow/status/aneeshpatne/weeklygrant/ci.yml?branch=main)](https://github.com/aneeshpatne/weeklygrant/actions/workflows/ci.yml)
