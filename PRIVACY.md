@@ -25,15 +25,15 @@ observations to calculate a local estimate.
 
 ## Network request
 
-Unless `--no-network` is used, weeklygrant sends a GET request to
-`https://models.dev/api.json` to retrieve public model pricing. The request does
+weeklygrant makes no network request by default. If `--refresh-prices` is used,
+it sends a GET request to `https://models.dev/api.json` to retrieve public model pricing. The request does
 not include session contents, token counts, quota observations, local paths, or
 calculated results. As with any network request, the destination and intervening
 infrastructure may observe ordinary connection metadata such as an IP address,
 request time, and user agent. The destination's own privacy terms apply.
 
-If the request fails or times out, weeklygrant uses its bundled rate cards. Use
-`--no-network` to prevent the request entirely.
+If the request fails or times out after two seconds, weeklygrant uses its bundled
+official rate cards. Refreshed data can only fill unknown models.
 
 ## Security
 

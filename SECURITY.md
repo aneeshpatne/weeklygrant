@@ -19,8 +19,9 @@ after the report is reproduced and assessed.
 ## Scope and safe use
 
 weeklygrant requires read access to the selected Codex home. It should not be run
-as root or with elevated privileges. Use `--no-network` when operating in a
-restricted environment and `--redact` before sharing machine-readable reports.
+as root or with elevated privileges. Networking is disabled unless
+`--refresh-prices` is requested; use `--redact` before sharing machine-readable
+reports.
 
 Dependency vulnerabilities should include evidence that the vulnerable path is
 reachable in weeklygrant, not only an automated scanner result.

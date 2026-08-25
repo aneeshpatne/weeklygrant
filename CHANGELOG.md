@@ -4,6 +4,11 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Grant estimator v2 recovers token-counter resets, uses request-level long-context pricing, isolates quota streams, detects low-usage weekly resets, and robustly rejects divergent slices.
+- Bundled official pricing is now the deterministic default; `--refresh-prices` opt-in only fills unknown models, and estimates scan 30 days unless `--all` or `--days` is supplied.
+- Published JavaScript is minified and tree-shaken with a package-size budget while retaining zero runtime dependencies.
+- Thank-you screen now uses a slow moonlit-water animation and stops timers while the dashboard is idle.
+
 ## 1.2.1
 
 - Session JSONL scan peeks each line's event type and skips conversation payloads instead of `JSON.parse`-ing them, so large `response_item` / `item_completed` lines no longer dominate startup.

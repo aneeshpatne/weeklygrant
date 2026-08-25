@@ -32,14 +32,16 @@ Other useful commands:
 ```bash
 npx weeklygrant --json                  # complete machine-readable report
 npx weeklygrant --days 30               # scan files modified in the last 30 days
-npx weeklygrant --no-network            # use bundled prices only
+npx weeklygrant --all                   # scan all history for an estimate
+npx weeklygrant --refresh-prices        # look up unknown model prices
 npx weeklygrant --home /path/to/.codex  # scan a different Codex home
 npx weeklygrant --json --redact         # hide your local Codex home path
 npx weeklygrant version                 # print the installed version
 ```
 
 Requires Node.js 22 or newer and local Codex session logs. By default, weeklygrant
-looks in `CODEX_HOME` and then `~/.codex`.
+looks in `CODEX_HOME` and then `~/.codex`. Estimates scan the latest 30 days;
+`usage` and `--json` retain all-history behavior.
 
 ## What you get
 
@@ -90,11 +92,10 @@ Session contents stay on your machine. weeklygrant has no telemetry, analytics,
 accounts, advertising, or local usage database, and it writes nothing to your
 session directory.
 
-Unless you pass `--no-network`, it makes one GET request to
-`https://models.dev/api.json` for current public pricing. The request does not
-include session contents and times out after four seconds; bundled rate cards
-are used if it fails. See [PRIVACY.md](PRIVACY.md) for the full data-handling
-description.
+The default path uses bundled official pricing and makes no network request.
+`--refresh-prices` optionally makes one GET request to `https://models.dev/api.json`
+to fill prices for unknown models; it never replaces bundled official cards and
+times out after two seconds. See [PRIVACY.md](PRIVACY.md) for details.
 
 `--json` includes the resolved Codex home path. Use `--redact` before sharing
 the output. Codex session files may contain prompts even though weeklygrant only
@@ -106,7 +107,7 @@ reads accounting fields; handle the original files carefully.
 flowchart LR
   Home[Local Codex logs] --> Parse[Token deltas and quota]
   Parse --> Price[Price observed tokens]
-  Cards[models.dev or bundled rates] --> Price
+  Cards[Bundled official rates] --> Price
   Price --> Fit[Fit weekly API value]
   Parse --> Fit
   Fit --> Output{Output}
@@ -119,15 +120,14 @@ resolved Codex home. `--days` filters files by modification time. Invalid JSONL
 lines are skipped, and unknown models remain unpriced rather than being assigned
 a guessed rate.
 
-Token counters are cumulative, so weeklygrant prices the difference between
-events: uncached input, cached input, and billed output. It splits quota history
-into epochs when a weekly reset is detected, ignores small downward jitter, and
-derives the headline from the pooled API-cost / matched-quota ratio (ratio of
-totals over slices that have both local cost and quota movement). The latest
-single slice is the current signal, not the headline. Confidence is based on
-the number of valid pairs, matched quota coverage, and agreement between recent
-fitted values. The grant graph is plotted against real time, breaks at weekly
-resets, and fills each reset gap with a dense dotted band.
+Token counters are cumulative, so weeklygrant normally prices their positive
+difference; if a session counter resets, it recovers that request from the
+request-level usage fields without counting repeated totals twice. Quota history
+is split at weekly resets and plan changes while small downward jitter is ignored.
+The estimator rejects divergent slices with a weighted median/MAD filter, then
+derives the headline from pooled API cost divided by matched quota across the
+remaining slices. Confidence is based on independent slice agreement, matched
+coverage, and pair count. The grant graph uses real time and breaks at resets.
 
 The interactive estimate runs in a worker thread so the dashboard remains
 responsive while files are scanned. The full JSON report also includes pricing

@@ -13,7 +13,7 @@ npm ci
 npm test
 npm run check
 npm run build
-npm run dev -- --home /path/to/synthetic/.codex --no-network
+npm run dev -- --home /path/to/synthetic/.codex
 ```
 
 Add tests for estimator changes, especially pricing, reset detection, interval
@@ -23,5 +23,5 @@ terminals. The interactive UI is `src/bin/term.ts` plus `src/bin/tui.ts` and mus
 stay free of runtime dependencies.
 
 Before submitting a change, run tests, type checks, a build, and
-`npm pack --dry-run`.
+`npm run check:size`.
 Explain user-visible changes and update `CHANGELOG.md` when appropriate.
