@@ -96,8 +96,8 @@ test("an unmatched usage jump does not collapse the estimate", () => {
   assert.equal(result.coveragePoints, 31);
 });
 
-test("headline pools matched cost over matched quota instead of median of slices", () => {
-  const events = [];
+test("headline pools robust inliers and rejects a divergent slice", () => {
+  const events: any[] = [];
   const observations = [observation(1_000, 0)];
   for (let index = 1; index <= 8; index++) {
     events.push(pricedEvent(1_000 + index * 1_000 - 500, 0.5));
@@ -106,10 +106,11 @@ test("headline pools matched cost over matched quota instead of median of slices
   events.push(pricedEvent(9_500, 6));
   observations.push(observation(10_000, 8));
   const result = estimateGrantFromLogs(events, observations);
-  assert.equal(result.headlineUsd, 125);
-  assert.equal(result.rawUsd, 150);
-  assert.equal(result.matchedCoveragePoints, 8);
-  assert.equal(result.series.filter((point) => point.kind === "quote").at(-1).valueUsd, 125);
+  assert.equal(result.headlineUsd, 100);
+  assert.equal(result.rawUsd, 100);
+  assert.equal(result.matchedCoveragePoints, 4);
+  assert.equal(result.outlierPairs, 1);
+  assert.equal(result.series.filter((point) => point.kind === "quote").at(-1).valueUsd, 100);
 });
 
 test("a new epoch does not inherit confidence from the previous epoch", () => {
@@ -186,6 +187,24 @@ test("offline rate-card loading uses bundled official prices", async () => {
   assert.equal(cards["gpt-5.6-terra"].input, 2);
 });
 
+test("official GPT-5.6 Sol pricing includes long context and Codex Fast mode", () => {
+  const base = { model: "gpt-5.6-sol", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 38.8);
+  assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 61);
+});
+
+test("price refresh fills unknown cards without overriding bundled official cards", async () => {
+  const cards = await loadRateCards(async () => ({
+    ok: true,
+    json: async () => ({ openai: { models: {
+      "gpt-5.6-sol": { cost: { input: 999, output: 999, cache_read: 999 } },
+      "future-model": { cost: { input: 3, output: 9, cache_read: 0.3 } },
+    } } }),
+  }) as Response);
+  assert.equal(cards["gpt-5.6-sol"].input, 4);
+  assert.equal(cards["future-model"].input, 3);
+});
+
 test("summarizes token usage and API value by model", () => {
   const result = summarizeModelUsage([
     { model: "gpt-5.2-codex", uncachedInput: 100, cachedInput: 50, billedOutput: 25, eligible: true, costUsd: 0.01 },
@@ -234,9 +253,9 @@ test("cost windows use prefix sums and ignore other quota ids", () => {
     { timestampMs: 3_000, costUsd: 4, eligible: true, quotaLimitId: null },
     { timestampMs: 4_000, costUsd: 8, eligible: true, quotaLimitId: "codex" },
   ]);
-  assert.equal(costInWindow(lanes, 1_000, 4_000, "codex"), 12);
-  assert.equal(costInWindow(lanes, 1_000, 3_000, "codex"), 4);
-  assert.equal(costInWindow(lanes, 0, 4_000, "other"), 6);
+  assert.equal(costInWindow(lanes, 1_000, 4_000, "codex"), 8);
+  assert.equal(costInWindow(lanes, 1_000, 3_000, "codex"), 0);
+  assert.equal(costInWindow(lanes, 0, 4_000, "other"), 2);
 });
 
 test("events on another quota id do not inflate the weekly fit", () => {
@@ -385,6 +404,38 @@ test("parseLogFile accepts CRLF and spaced type keys", () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("parseLogFile ignores repeated totals and recovers a reset from last usage", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-counter-reset-"));
+  const file = path.join(dir, "session.jsonl");
+  const token = (total) => JSON.stringify({
+    type: "event_msg",
+    timestamp: 1_000 + total,
+    payload: {
+      type: "token_count",
+      info: {
+        total_token_usage: { input_tokens: total, cached_input_tokens: 0, output_tokens: 0 },
+        last_token_usage: { input_tokens: total, cached_input_tokens: 0, output_tokens: 0 },
+      },
+    },
+  });
+  fs.writeFileSync(file, [token(100), token(100), token(50)].join("\n"));
+  const parsed = parseLogFile(file);
+  assert.deepEqual(parsed.events.map((event) => event.uncachedInput), [100, 50]);
+  assert.deepEqual(parsed.events.map((event) => event.counterReset), [false, true]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("a scheduled weekly reset splits low and zero usage epochs", () => {
+  const week = 7 * 86_400_000;
+  const resetsAt = 10_000;
+  const epochs = splitEpochs([
+    observation(1_000, 1, resetsAt),
+    observation(resetsAt + 1, 0, resetsAt + week),
+    observation(resetsAt + 2, 0, resetsAt + week),
+  ]);
+  assert.deepEqual(epochs.map((epoch) => epoch.map((item) => item.usedPercent)), [[1], [0, 0]]);
+});
+
 test("estimateCodexGrant skips usage series unless requested", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-home-"));
   fs.mkdirSync(path.join(root, "sessions"));
@@ -394,9 +445,11 @@ test("estimateCodexGrant skips usage series unless requested", async () => {
     timestamp: 1_000,
     payload: { info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 1 } } },
   })}\n`);
-  const skipped = await estimateCodexGrant({ home: root, noNetwork: true });
-  const included = await estimateCodexGrant({ home: root, noNetwork: true, includeUsageSeries: true });
+  const skipped = await estimateCodexGrant({ home: root });
+  const included = await estimateCodexGrant({ home: root, includeUsageSeries: true });
+  assert.deepEqual(skipped.modelUsage, []);
   assert.deepEqual(skipped.modelUsageSeries, []);
+  assert.equal(included.modelUsage.length, 1);
   assert.equal(included.modelUsageSeries.length, 1);
   fs.rmSync(root, { recursive: true, force: true });
 });

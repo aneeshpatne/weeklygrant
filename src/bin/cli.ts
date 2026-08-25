@@ -24,7 +24,8 @@ Options:
   --json          Print the complete report as JSON
   --home <path>   Use a specific Codex home (default: CODEX_HOME or ~/.codex)
   --days <n>      Only scan session files modified in the last n days
-  --no-network    Do not fetch models.dev; use bundled pricing only
+  --all           Scan all available history for an estimate
+  --refresh-prices  Look up unknown model prices on models.dev
   --redact        Hide local filesystem paths in output
 `);
 }
@@ -88,13 +89,16 @@ function printUsage(report) {
 
 async function main() {
   const daysValue = option("--days");
-  const days = daysValue === undefined ? Infinity : Number(daysValue);
+  if (daysValue !== undefined && args.includes("--all")) throw new Error("--days and --all cannot be used together");
+  const completeHistory = command === "usage" || args.includes("--json") || args.includes("--all");
+  const days = daysValue === undefined ? (completeHistory ? Infinity : 30) : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
   const estimateOptions = {
     home: option("--home"),
     days,
-    noNetwork: args.includes("--no-network"),
+    refreshPrices: args.includes("--refresh-prices"),
     includeUsageSeries: command === "usage" || args.includes("--json"),
+    includeModelUsage: command === "usage" || args.includes("--json"),
   };
   if (process.stdout.isTTY && !args.includes("--json")) {
     const { runTui } = await import("./tui.js");

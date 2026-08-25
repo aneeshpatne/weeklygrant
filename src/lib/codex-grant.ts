@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const WEEKLY_GRANT_VERSION = "weekly-grant-estimate";
+export const WEEKLY_GRANT_VERSION = "weekly-grant-estimate-v2";
 export const MAX_USAGE_SERIES_POINTS = 1_000;
 const WEEKLY_MINUTES = 10_080;
 const WEEKLY_TOLERANCE = 240;
@@ -30,6 +30,7 @@ type RateCard = {
   output: number;
   cacheRead: number;
   tiers: RateTier[];
+  fastMultiplier?: number;
   source?: "official" | "models_dev";
 };
 
@@ -41,6 +42,7 @@ type CostLane = {
 type CostLanes = {
   unassigned: CostLane;
   byLimit: Map<string, CostLane>;
+  includeUnassigned: boolean;
 };
 
 type JsonlFile = {
@@ -52,12 +54,13 @@ type JsonlFile = {
 export type EstimateOptions = {
   home?: string;
   days?: number;
-  noNetwork?: boolean;
+  refreshPrices?: boolean;
   fetch?: typeof globalThis.fetch | null;
   includeUsageSeries?: boolean;
+  includeModelUsage?: boolean;
 };
 
-export const FALLBACK_CARDS: Record<string, RateCard> = {
+export const OFFICIAL_CARDS: Record<string, RateCard> = {
   "gpt-5": card(1.25, 10, 0.125),
   "gpt-5-codex": card(1.25, 10, 0.125),
   "gpt-5.1": card(1.25, 10, 0.125),
@@ -66,21 +69,21 @@ export const FALLBACK_CARDS: Record<string, RateCard> = {
   "gpt-5.2": card(1.75, 14, 0.175),
   "gpt-5.2-codex": card(1.75, 14, 0.175),
   "gpt-5.3-codex": card(1.75, 14, 0.175),
-  "gpt-5.4": card(2.5, 15, 0.25, tier(5, 22.5, 0.5)),
-  "gpt-5.4-mini": card(0.75, 4.5, 0.075),
+  "gpt-5.4": card(2.5, 15, 0.25, tier(5, 22.5, 0.5), 2),
+  "gpt-5.4-mini": card(0.75, 4.5, 0.075, null, 2),
   "gpt-5.4-nano": card(0.2, 1.25, 0.02),
-  "gpt-5.5": card(5, 30, 0.5, tier(10, 45, 1)),
-  "gpt-5.6": card(5, 30, 0.5, tier(10, 45, 1)),
-  "gpt-5.6-sol": card(5, 30, 0.5, tier(10, 45, 1)),
-  "gpt-5.6-luna": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04)),
-  "gpt-5.6-terra": card(2, 12, 0.2, tier(4, 18, 0.4)),
+  "gpt-5.5": card(5, 30, 0.5, tier(10, 45, 1), 2.5),
+  "gpt-5.6": card(4, 20, 0.4, tier(8, 30, 0.8), 2.5),
+  "gpt-5.6-sol": card(4, 20, 0.4, tier(8, 30, 0.8), 2.5),
+  "gpt-5.6-luna": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04), 2.5),
+  "gpt-5.6-terra": card(2, 12, 0.2, tier(4, 18, 0.4), 2.5),
 };
 
-const FALLBACK_FAMILIES = Object.keys(FALLBACK_CARDS).sort((a, b) => b.length - a.length);
+const OFFICIAL_FAMILIES = Object.keys(OFFICIAL_CARDS).sort((a, b) => b.length - a.length);
 const EMPTY_LANE: CostLane = { times: [], prefix: [0] };
 
-function card(input: number, output: number, cacheRead: number, longTier: RateTier | null = null): RateCard {
-  return { input, output, cacheRead, tiers: longTier ? [longTier] : [] };
+function card(input: number, output: number, cacheRead: number, longTier: RateTier | null = null, fastMultiplier?: number): RateCard {
+  return { input, output, cacheRead, tiers: longTier ? [longTier] : [], ...(fastMultiplier ? { fastMultiplier } : {}) };
 }
 
 function tier(input: number, output: number, cacheRead: number): RateTier {
@@ -108,42 +111,40 @@ export function normalizeModel(model) {
 
 function modelFamily(model) {
   const normalized = normalizeModel(model);
-  if (FALLBACK_CARDS[normalized]) return normalized;
-  return FALLBACK_FAMILIES.find((name) => normalized === name || normalized.startsWith(`${name}-`)) || null;
+  if (OFFICIAL_CARDS[normalized]) return normalized;
+  return OFFICIAL_FAMILIES.find((name) => normalized === name || normalized.startsWith(`${name}-`)) || null;
 }
 
 function pickCard(model, cards) {
   const normalized = normalizeModel(model);
   if (cards[normalized]) return { rate: cards[normalized], family: modelFamily(normalized) || normalized };
   const family = modelFamily(normalized);
-  return { rate: family ? cards[family] || FALLBACK_CARDS[family] : null, family: family || "" };
+  return { rate: family ? cards[family] || OFFICIAL_CARDS[family] : null, family: family || "" };
 }
 
-export function priceTokens(event, cards = FALLBACK_CARDS) {
-  const { rate, family } = pickCard(event.model, cards);
+export function priceTokens(event, cards = OFFICIAL_CARDS) {
+  const { rate } = pickCard(event.model, cards);
   if (!rate) return { ...event, costUsd: 0, eligible: false, pricingStatus: "pending" };
-  const inputTokens = number(event.uncachedInput) + number(event.cachedInput);
-  const longContext = Boolean(event.longContext) || inputTokens > LONG_CONTEXT_TOKENS;
+  const requestInputTokens = number(event.requestInputTokens, NaN);
+  const longContext = Boolean(event.longContext) || (Number.isFinite(requestInputTokens) && requestInputTokens >= LONG_CONTEXT_TOKENS);
   let active = rate;
   if (longContext && rate.tiers.length) {
     let chosen = null;
     for (const candidate of rate.tiers) {
-      if (inputTokens > candidate.threshold || event.longContext) chosen = candidate;
+      if (requestInputTokens >= candidate.threshold || event.longContext) chosen = candidate;
     }
     if (chosen) active = chosen;
   }
-  let inputMult = 1;
-  let outputMult = 1;
-  if (longContext && !rate.tiers.length && /gpt-5\.[456]/.test(family)) {
-    inputMult = 2;
-    outputMult = 1.5;
-  }
+  if (longContext && !rate.tiers.length) return { ...event, costUsd: 0, eligible: false, pricingStatus: "pending" };
   let costUsd = (
-    number(event.uncachedInput) * active.input * inputMult
+    number(event.uncachedInput) * active.input
     + number(event.cachedInput) * active.cacheRead
-    + number(event.billedOutput) * active.output * outputMult
+    + number(event.billedOutput) * active.output
   ) / 1_000_000;
-  if (event.serviceTier === "fast") costUsd *= family.includes("gpt-5.4") ? 2 : 2.5;
+  if (event.serviceTier === "fast") {
+    if (!rate.fastMultiplier) return { ...event, costUsd: 0, eligible: false, pricingStatus: "pending" };
+    costUsd *= rate.fastMultiplier;
+  }
   return { ...event, costUsd, eligible: true, pricingStatus: active.source || rate.source || "official" };
 }
 
@@ -207,7 +208,7 @@ export function buildModelUsageSeries(events, maxPoints = MAX_USAGE_SERIES_POINT
     list.push({ timestampMs: event.timestampMs, model, ...current });
     byModel.set(model, list);
   }
-  const series = [];
+  const series: any[] = [];
   for (const list of byModel.values()) series.push(...bucketSeries(list, maxPoints));
   return series.sort((a, b) => a.timestampMs - b.timestampMs || a.model.localeCompare(b.model));
 }
@@ -233,7 +234,7 @@ function weeklyObservation(rateLimits, timestamp, sessionId) {
 
 function typeFromPrefix(head: string) {
   let from = 0;
-  let first = null;
+  let first: string | null = null;
   while (from < head.length) {
     const key = head.indexOf('"type"', from);
     if (key < 0) break;
@@ -352,9 +353,10 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
   let sessionId = path.basename(file, ".jsonl");
   let model = "";
   let serviceTier = "standard";
+  let lastLimitId: string | null = null;
   let previous = { uncachedInput: 0, cachedInput: 0, billedOutput: 0, reasoning: 0 };
-  const events = [];
-  const observations = [];
+  const events: any[] = [];
+  const observations: any[] = [];
   if (!fileSize) return { events, observations };
   for (const line of readCandidateLines(file)) {
     if (!line.trim()) continue;
@@ -377,6 +379,7 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
     const at = timestampMs(object.timestamp ?? payload.timestamp) ?? fileMtime;
     const info = payload.info ?? object.info ?? {};
     const usage = info.total_token_usage ?? info.totalTokenUsage ?? payload.total_token_usage ?? {};
+    const lastUsage = info.last_token_usage ?? info.lastTokenUsage ?? payload.last_token_usage ?? null;
     const input = number(usage.input_tokens ?? usage.inputTokens);
     const cached = number(usage.cached_input_tokens ?? usage.cachedInputTokens);
     const output = number(usage.output_tokens ?? usage.outputTokens);
@@ -387,18 +390,48 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
       billedOutput: Math.max(0, output > 0 ? output : reasoning),
       reasoning: Math.max(0, reasoning),
     };
-    const delta = {
+    let delta = {
       uncachedInput: Math.max(0, current.uncachedInput - previous.uncachedInput),
       cachedInput: Math.max(0, current.cachedInput - previous.cachedInput),
       billedOutput: Math.max(0, current.billedOutput - previous.billedOutput),
       reasoning: Math.max(0, current.reasoning - previous.reasoning),
     };
+    const currentTotal = current.uncachedInput + current.cachedInput + current.billedOutput;
+    const previousTotal = previous.uncachedInput + previous.cachedInput + previous.billedOutput;
+    const counterReset = currentTotal < previousTotal;
+    if (counterReset) {
+      const lastInput = number(lastUsage?.input_tokens ?? lastUsage?.inputTokens, NaN);
+      const lastCached = number(lastUsage?.cached_input_tokens ?? lastUsage?.cachedInputTokens, NaN);
+      const lastOutput = number(lastUsage?.output_tokens ?? lastUsage?.outputTokens, NaN);
+      const lastReasoning = number(lastUsage?.reasoning_output_tokens ?? lastUsage?.reasoningOutputTokens);
+      if (Number.isFinite(lastInput) && Number.isFinite(lastCached) && Number.isFinite(lastOutput)) {
+        delta = {
+          uncachedInput: Math.max(0, lastInput - lastCached),
+          cachedInput: Math.max(0, lastCached),
+          billedOutput: Math.max(0, lastOutput > 0 ? lastOutput : lastReasoning),
+          reasoning: Math.max(0, lastReasoning),
+        };
+      } else delta = current;
+    }
     previous = current;
     const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
     const observation = weeklyObservation(rateLimits, at, sessionId);
-    if (observation) observations.push(observation);
+    if (observation) {
+      observations.push(observation);
+      lastLimitId = observation.limitId;
+    }
     if (delta.uncachedInput + delta.cachedInput + delta.billedOutput > 0) {
-      events.push({ ...delta, timestampMs: at, model, serviceTier, sessionId, quotaLimitId: observation?.limitId ?? null });
+      const requestInput = number(lastUsage?.input_tokens ?? lastUsage?.inputTokens, NaN);
+      events.push({
+        ...delta,
+        timestampMs: at,
+        model,
+        serviceTier,
+        sessionId,
+        quotaLimitId: observation?.limitId ?? lastLimitId,
+        requestInputTokens: Number.isFinite(requestInput) ? requestInput : delta.uncachedInput + delta.cachedInput,
+        counterReset,
+      });
     }
   }
   return { events, observations };
@@ -442,16 +475,20 @@ export function splitEpochs(observations) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
-  const epochs = [];
+  const epochs: any[] = [];
   for (const group of groups.values()) {
     group.sort((a, b) => a.timestampMs - b.timestampMs);
-    let epoch = [];
+    let epoch: any[] = [];
     for (const original of group) {
       const previous = epoch.at(-1);
       const drop = previous ? previous.usedPercent - original.usedPercent : 0;
-      const resetJump = previous?.resetsAtMs && original.resetsAtMs && original.resetsAtMs - previous.resetsAtMs > RESET_JITTER_MS;
+      const resetJump = Boolean(previous?.resetsAtMs && original.resetsAtMs && original.resetsAtMs - previous.resetsAtMs > RESET_JITTER_MS);
       const afterReset = previous?.resetsAtMs && original.timestampMs >= previous.resetsAtMs - RESET_JITTER_MS;
-      const reset = drop >= HARD_RESET_DROP || (drop >= RESET_DROP_POINTS && (resetJump || afterReset));
+      const planChanged = Boolean(previous?.planType && original.planType && previous.planType !== original.planType);
+      const reset = planChanged
+        || drop >= HARD_RESET_DROP
+        || (resetJump && (afterReset || drop > 0))
+        || (drop >= RESET_DROP_POINTS && (resetJump || afterReset));
       if (reset && epoch.length) { epochs.push(epoch); epoch = []; }
       const item = !reset && previous && original.usedPercent < previous.usedPercent
         ? { ...original, usedPercent: previous.usedPercent }
@@ -486,9 +523,9 @@ function pooledWeekUsd(costUsd, percent) {
   return value;
 }
 
-function classifyConfidence(validPairs, coverage, fitted) {
+function classifyConfidence(validPairs, coverage, rates) {
   if (validPairs < 1) return "none";
-  const recent = fitted.filter((x) => x > 0).slice(-MEDIAN_SAMPLE_COUNT);
+  const recent = rates.filter((x) => x > 0).slice(-MEDIAN_SAMPLE_COUNT);
   const center = median(recent);
   const relative = center ? median(recent.map((x) => Math.abs(x - center))) / center : Infinity;
   if (validPairs >= 5 && coverage >= 20 && relative <= 0.1) return "high";
@@ -509,7 +546,7 @@ export function hasGraphableSeries(series, minPoints = 2) {
 
 function buildLane(events): CostLane {
   const sorted = [...events].sort((a, b) => a.timestampMs - b.timestampMs);
-  const times = [];
+  const times: number[] = [];
   const prefix = [0];
   let sum = 0;
   for (const event of sorted) {
@@ -523,7 +560,7 @@ function buildLane(events): CostLane {
 }
 
 export function buildCostLanes(events): CostLanes {
-  const unassigned = [];
+  const unassigned: any[] = [];
   const byLimit = new Map();
   for (const event of events) {
     if (!event.eligible) continue;
@@ -533,7 +570,7 @@ export function buildCostLanes(events): CostLanes {
       byLimit.set(event.quotaLimitId, list);
     } else unassigned.push(event);
   }
-  const lanes: CostLanes = { unassigned: buildLane(unassigned), byLimit: new Map() };
+  const lanes: CostLanes = { unassigned: buildLane(unassigned), byLimit: new Map(), includeUnassigned: byLimit.size <= 1 };
   for (const [limitId, list] of byLimit) lanes.byLimit.set(limitId, buildLane(list));
   return lanes;
 }
@@ -556,15 +593,16 @@ function costAt(lane: CostLane, timestamp: number) {
 
 export function costInWindow(lanes: CostLanes, start: number, end: number, limitId: string) {
   const tagged = lanes.byLimit.get(limitId) || EMPTY_LANE;
-  return costAt(tagged, end) - costAt(tagged, start) + costAt(lanes.unassigned, end) - costAt(lanes.unassigned, start);
+  const assigned = costAt(tagged, end) - costAt(tagged, start);
+  return lanes.includeUnassigned ? assigned + costAt(lanes.unassigned, end) - costAt(lanes.unassigned, start) : assigned;
 }
 
 export function estimateGrantFromLogs(events, observations) {
   const collapsed = collapseObservations(observations);
   const epochs = splitEpochs(collapsed);
   const lanes = buildCostLanes(events);
-  const series = [];
-  let active = null;
+  const series: any[] = [];
+  let active: any = null;
   let pricedEvents = 0;
   let pendingEvents = 0;
   for (const event of events) {
@@ -575,18 +613,15 @@ export function estimateGrantFromLogs(events, observations) {
     const first = epoch[0];
     let anchor = first;
     let anchorCost = costInWindow(lanes, first.timestampMs, anchor.timestampMs, first.limitId);
-    const rates = [];
-    const fittedValues = [];
-    let matchedCost = 0;
-    let matchedPercent = 0;
-    let rawUsd = null;
-    let previous = null;
-    for (const current of epoch.slice(1)) {
+    const candidates: any[] = [];
+    const timeline: any[] = [];
+    for (let index = 1; index < epoch.length; index++) {
+      const current = epoch[index];
       const currentCost = costInWindow(lanes, first.timestampMs, current.timestampMs, first.limitId);
       const costDelta = currentCost - anchorCost;
       const percentDelta = current.usedPercent - anchor.usedPercent;
       let decision = "pending";
-      let weekUsd = null;
+      let weekUsd: number | null = null;
       if (![costDelta, percentDelta].every(Number.isFinite) || percentDelta < -0.01) decision = "rejected";
       else if (costDelta > 0 && percentDelta >= MIN_PERCENT_DELTA) {
         weekUsd = costDelta / (percentDelta / 100);
@@ -595,35 +630,53 @@ export function estimateGrantFromLogs(events, observations) {
         else decision = "valid";
       }
       if (decision === "valid") {
-        matchedCost += costDelta;
-        matchedPercent += percentDelta;
-        rates.push({ value: weekUsd, weight: Math.max(0.5, percentDelta) });
-        rawUsd = weekUsd;
-        const fitted = pooledWeekUsd(matchedCost, matchedPercent) ?? weekUsd;
-        fittedValues.push(fitted);
-        previous = { timestampMs: current.timestampMs, epoch: epochIndex, kind: "quote", valueUsd: fitted, rawUsd: weekUsd, usedPercent: current.usedPercent, observedCostUsd: currentCost, resetsAtMs: current.resetsAtMs };
-        series.push(previous);
+        const candidate = { current, currentCost, costDelta, percentDelta, weekUsd };
+        candidates.push(candidate);
+        timeline.push(candidate);
         anchor = current;
         anchorCost = currentCost;
       } else {
         const unmatchedJump = costDelta <= 0 && percentDelta >= MIN_PERCENT_DELTA;
         if (decision === "rejected" || unmatchedJump) { anchor = current; anchorCost = currentCost; }
-        if (previous) {
-          previous = { ...previous, timestampMs: current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: current.usedPercent, observedCostUsd: currentCost, resetsAtMs: current.resetsAtMs };
-          series.push(previous);
-        }
+        timeline.push({ current, currentCost });
       }
     }
+    const weightedRates = candidates.map((candidate) => ({ value: candidate.weekUsd, weight: Math.max(0.5, candidate.percentDelta) }));
+    const center = weightedMedian(weightedRates);
+    const mad = center == null ? null : weightedMedian(weightedRates.map((rate) => ({ value: Math.abs(rate.value - center), weight: rate.weight })));
+    const threshold = center == null ? Infinity : Math.max(center * 0.25, 3 * (mad ?? 0));
+    const inliers = new Set(candidates.length < 3 || center == null
+      ? candidates
+      : candidates.filter((candidate) => Math.abs(candidate.weekUsd - center) <= threshold));
+    let matchedCost = 0;
+    let matchedPercent = 0;
+    let previous: any = null;
+    const inlierRates: number[] = [];
+    for (const point of timeline) {
+      if (point.weekUsd != null && inliers.has(point)) {
+        matchedCost += point.costDelta;
+        matchedPercent += point.percentDelta;
+        inlierRates.push(point.weekUsd);
+        const fitted = pooledWeekUsd(matchedCost, matchedPercent) ?? point.weekUsd;
+        previous = { timestampMs: point.current.timestampMs, epoch: epochIndex, kind: "quote", valueUsd: fitted, rawUsd: point.weekUsd, usedPercent: point.current.usedPercent, observedCostUsd: point.currentCost, resetsAtMs: point.current.resetsAtMs };
+        series.push(previous);
+      } else if (previous) {
+        previous = { ...previous, timestampMs: point.current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: point.current.usedPercent, observedCostUsd: point.currentCost, resetsAtMs: point.current.resetsAtMs };
+        series.push(previous);
+      }
+    }
+    const rawUsd = inlierRates.at(-1) ?? null;
     active = {
-      epoch, rates, fittedValues, rawUsd, validPairs: rates.length,
+      epoch, rawUsd, validPairs: inlierRates.length, inlierRates,
       headlineUsd: pooledWeekUsd(matchedCost, matchedPercent) ?? rawUsd,
       coveragePoints: Math.max(0, epoch.at(-1).usedPercent - first.usedPercent),
       matchedCoveragePoints: matchedPercent,
       observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId),
+      outlierPairs: candidates.length - inlierRates.length,
     };
   });
   const latest = active?.epoch.at(-1) ?? null;
-  const confidence = classifyConfidence(active?.validPairs ?? 0, active?.matchedCoveragePoints ?? 0, active?.fittedValues ?? []);
+  const confidence = classifyConfidence(active?.validPairs ?? 0, active?.matchedCoveragePoints ?? 0, active?.inlierRates ?? []);
   return {
     algorithm: WEEKLY_GRANT_VERSION,
     headlineUsd: active?.headlineUsd ?? null,
@@ -635,6 +688,7 @@ export function estimateGrantFromLogs(events, observations) {
     weeklyUsedPercent: latest?.usedPercent ?? null,
     observedTokenCostUsd: active?.observedTokenCostUsd ?? 0,
     validPairs: active?.validPairs ?? 0,
+    outlierPairs: active?.outlierPairs ?? 0,
     pricedEvents,
     pendingEvents,
     resetsAtMs: latest?.resetsAtMs ?? null,
@@ -659,23 +713,25 @@ function parseModelsDev(data: any): Record<string, RateCard> {
   return cards;
 }
 
-export async function loadRateCards(fetchImpl: typeof globalThis.fetch | null = globalThis.fetch): Promise<Record<string, RateCard>> {
-  const fallback: Record<string, RateCard> = Object.fromEntries(Object.entries(FALLBACK_CARDS).map(([id, value]) => [id, { ...value, source: "official" }]));
-  if (!fetchImpl) return fallback;
+export async function loadRateCards(fetchImpl: typeof globalThis.fetch | null = null): Promise<Record<string, RateCard>> {
+  const official: Record<string, RateCard> = Object.fromEntries(Object.entries(OFFICIAL_CARDS).map(([id, value]) => [id, { ...value, source: "official" }]));
+  if (!fetchImpl) return official;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
+  const timeout = setTimeout(() => controller.abort(), 2000);
   try {
     const response = await fetchImpl("https://models.dev/api.json", { signal: controller.signal });
-    if (!response.ok) return fallback;
-    return { ...fallback, ...parseModelsDev(await response.json()) };
-  } catch { return fallback; }
+    if (!response.ok) return official;
+    const refreshed = parseModelsDev(await response.json());
+    for (const [id, value] of Object.entries(refreshed)) if (!official[id]) official[id] = value;
+    return official;
+  } catch { return official; }
   finally { clearTimeout(timeout); }
 }
 
 export async function estimateCodexGrant(options: EstimateOptions = {}) {
   const home = path.resolve(options.home || String(process.env.CODEX_HOME || "").split(",")[0] || path.join(os.homedir(), ".codex"));
-  const cardsPromise = loadRateCards(options.noNetwork ? null : options.fetch);
-  const cutoff = Number.isFinite(options.days) ? Date.now() - options.days * 86_400_000 : -Infinity;
+  const cardsPromise = loadRateCards(options.refreshPrices ? options.fetch ?? globalThis.fetch : null);
+  const cutoff = Number.isFinite(options.days) ? Date.now() - Number(options.days) * 86_400_000 : -Infinity;
   const files = [...walkJsonl(path.join(home, "sessions"), cutoff), ...walkJsonl(path.join(home, "archived_sessions"), cutoff)];
   const parsed = files.map((entry) => parseLogFile(entry.file, entry.mtimeMs, entry.size));
   const cards = await cardsPromise;
@@ -685,10 +741,11 @@ export async function estimateCodexGrant(options: EstimateOptions = {}) {
   return {
     ...report,
     pricingSources,
-    rateCardMode: options.noNetwork ? "offline" : "online-with-fallback",
+    rateCardMode: options.refreshPrices ? "bundled-plus-models-dev" : "bundled-official",
     codexHome: home,
     filesScanned: files.length,
-    modelUsage: summarizeModelUsage(events),
+    scanWindowDays: Number.isFinite(options.days) ? options.days : null,
+    modelUsage: options.includeModelUsage || options.includeUsageSeries ? summarizeModelUsage(events) : [],
     modelUsageSeries: options.includeUsageSeries ? buildModelUsageSeries(events) : [],
   };
 }
