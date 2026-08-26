@@ -39,18 +39,20 @@ const USAGE_METRICS: ReadonlyArray<readonly [string, string, string]> = [
   ["API-equivalent value", "apiValueUsd", "$"],
 ];
 const STAT_WIDTH = 24;
-const MOONLIT_WATER = [
-  "           _..._           ",
-  "         .'     '.         ",
-  "        /   .-.   \\        ",
-  "        |  (   )  |        ",
-  "         '. `-' .'         ",
-  "           `-.-'           ",
-  "  ~~~~      ~~~~~      ~~~ ",
-  "       ~~~       ~~~~      ",
-  " ~~~      ~~~~       ~~~   ",
+const THANK_YOU_ART = [
+  String.raw` _____ _   _    _    _   _ _  __`,
+  String.raw`|_   _| | | |  / \  | \ | | |/ /`,
+  String.raw`  | | | |_| | / _ \ |  \| | ' / `,
+  String.raw`  | | |  _  |/ ___ \| |\  | . \ `,
+  String.raw`  |_| |_| |_/_/   \_\_| \_|_|\_\ `,
+  "",
+  String.raw`__   _____  _   _`,
+  String.raw`\ \ / / _ \| | | |`,
+  String.raw` \ V / | | | | | |`,
+  String.raw`  | |  |_| | |_| |`,
+  String.raw`  |_| \___/ \___/ `,
 ];
-const MOONLIT_WATER_WIDTH = MOONLIT_WATER[0].length;
+const THANK_YOU_ART_WIDTH = Math.max(...THANK_YOU_ART.map((line) => line.length));
 
 export type TuiView = "estimate" | "usage";
 export type TuiPhase = "loading" | "ready" | "error" | "leaving";
@@ -131,13 +133,6 @@ function centerText(text: string, width: number) {
   return `${" ".repeat(Math.floor((width - w) / 2))}${text}`;
 }
 
-function moonlitWaterFrame(frame: number) {
-  return MOONLIT_WATER.map((row, y) => y < 6 ? row : [...row].map((cell, x) => {
-    if (cell !== "~") return cell;
-    return (x + y + frame) % 4 < 2 ? "~" : "-";
-  }).join(""));
-}
-
 function colorChartLine(line: string, color: Color) {
   if (!line.includes(RESET_DOT)) return style(line, { color });
   return line.split(RESET_DOT).map((part, index) => `${index ? style(RESET_DOT, { color: "magenta" }) : ""}${style(part, { color })}`).join("");
@@ -204,14 +199,14 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
     return [style(`weeklygrant: ${state.error || "unknown error"}`, { color: "red" })];
   }
   if (screen === "thanks") {
-    const boxWidth = Math.min(width, 48);
+    const boxWidth = Math.min(width, 64);
     const textWidth = Math.max(1, boxWidth - 6);
-    const showArt = textWidth >= MOONLIT_WATER_WIDTH;
-    const art = showArt ? moonlitWaterFrame(state.spinner).map((line, index) => style(line, { color: index < 6 ? "cyan" : "gray" })) : [];
+    const showArt = textWidth >= THANK_YOU_ART_WIDTH;
+    const art = showArt ? THANK_YOU_ART.map((line) => style(line, { bold: true, color: "cyan" })) : [];
     const inner = box([
       ...art,
       ...(showArt ? [""] : []),
-      style(centerText("thank you", showArt ? MOONLIT_WATER_WIDTH : textWidth), { bold: true, color: "cyan" }),
+      ...(!showArt ? [style(centerText("THANK YOU", textWidth), { bold: true, color: "cyan" })] : []),
       "",
       "If this was useful, star the repo.",
       style(REPO_URL, { color: "cyan" }),

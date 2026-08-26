@@ -167,8 +167,7 @@ test("renderFrame prints the splash, dashboard, and usage copy", () => {
 
   const thanks = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 0 }, 80).join("\n"));
   const thanksNext = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 5 }, 80).join("\n"));
-  assert.match(thanks, /thank you/);
+  assert.match(thanks, /_____ _   _/);
   assert.match(thanks, /star the repo/);
-  assert.match(thanks, /_\.\.\._/);
-  assert.notEqual(thanks, thanksNext);
+  assert.equal(thanks, thanksNext);
 });
