@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs";
+import { parseArgs } from "../lib/args.js";
 import { estimateCodexGrant } from "../lib/codex-grant.js";
 import { integerFormat, moneyFormat } from "../lib/format.js";
 
 const args = process.argv.slice(2);
-const command = args[0];
 
 function printHelp() {
   console.log(`weeklygrant
@@ -28,28 +28,6 @@ Options:
   --refresh-prices  Look up unknown model prices on models.dev
   --redact        Hide local filesystem paths in output
 `);
-}
-
-if (command === "version" || command === "-v" || command === "--version") {
-  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
-  console.log(pkg.version);
-  process.exit(0);
-}
-
-if (command === "help" || command === "-h" || command === "--help") {
-  printHelp();
-  process.exit(0);
-}
-
-if (command && command !== "estimate" && command !== "usage" && command !== "--json" && !command.startsWith("--")) {
-  console.error(`Unknown command: ${command}`);
-  printHelp();
-  process.exit(1);
-}
-
-function option(name) {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : undefined;
 }
 
 function money(value) {
@@ -88,26 +66,25 @@ function printUsage(report) {
 }
 
 async function main() {
-  const daysValue = option("--days");
-  if (daysValue !== undefined && args.includes("--all")) throw new Error("--days and --all cannot be used together");
-  const completeHistory = command === "usage" || args.includes("--json") || args.includes("--all");
-  const days = daysValue === undefined ? (completeHistory ? Infinity : 30) : Number(daysValue);
-  if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
-  const estimateOptions = {
-    home: option("--home"),
-    days,
-    refreshPrices: args.includes("--refresh-prices"),
-    includeUsageSeries: command === "usage" || args.includes("--json"),
-    includeModelUsage: command === "usage" || args.includes("--json"),
-  };
-  if (process.stdout.isTTY && !args.includes("--json")) {
+  const parsed = parseArgs(args);
+  const { command, estimate: estimateOptions } = parsed;
+  if (command === "version") {
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+    console.log(pkg.version);
+    return;
+  }
+  if (command === "help") {
+    printHelp();
+    return;
+  }
+  if (process.stdout.isTTY && !parsed.json) {
     const { runTui } = await import("./tui.js");
     await runTui(estimateOptions, command === "usage" ? "usage" : "estimate");
     return;
   }
   const report = await estimateCodexGrant(estimateOptions);
-  if (args.includes("--json")) {
-    const output = args.includes("--redact") ? { ...report, codexHome: "[redacted]" } : report;
+  if (parsed.json) {
+    const output = parsed.redact ? { ...report, codexHome: "[redacted]" } : report;
     console.log(JSON.stringify(output, null, 2));
     return;
   }
@@ -120,8 +97,12 @@ async function main() {
   console.log(`${report.label} · ${report.confidence} confidence · based on ${basis.toFixed(1)} quota points`);
   if (report.weeklyUsedPercent != null) console.log(`Quota used: ${report.weeklyUsedPercent.toFixed(1)}%`);
   console.log(`Observed spend: ${money(report.observedTokenCostUsd)} · Current signal: ${money(report.rawUsd)}`);
+  if (report.fiveHour?.present) {
+    const share = report.fiveHour.maxSpendPercentOfWeekly == null ? "unknown share" : `${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% of weekly`;
+    console.log(`5-hour maximum: ${money(report.fiveHour.headlineUsd)} · ${share} · ${report.fiveHour.confidence} confidence`);
+  }
   console.log(`Measurements: ${report.validPairs} valid pairs, ${report.pricedEvents} priced events, ${report.pendingEvents} pending events`);
-  if (!report.filesScanned) console.log(args.includes("--redact") ? "No Codex JSONL sessions found" : `No Codex JSONL sessions found under ${report.codexHome}`);
+  if (!report.filesScanned) console.log(parsed.redact ? "No Codex JSONL sessions found" : `No Codex JSONL sessions found under ${report.codexHome}`);
 }
 
 main().catch((error) => {

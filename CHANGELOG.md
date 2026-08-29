@@ -4,6 +4,14 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.2.3
+
+- Added independent detection and estimation for the Codex five-hour quota window. Reports now include the maximum five-hour API-equivalent spend and its percentage of the estimated weekly grant (for example, 100% of the five-hour window can be shown as 16% of weekly capacity).
+- Added strict CLI argument validation for unknown flags, missing values, duplicate options, and conflicting `--days`/`--all` usage.
+- Added scan diagnostics for malformed JSONL records and unreadable session files without changing the normal quiet output.
+- Made the persisted star-nudge configuration atomic and owner-readable only.
+- Added packaged-artifact smoke testing to CI, covering installation, version/help output, JSON redaction, and an empty Codex home.
+
 ## 1.2.2
 
 - Grant estimator v2 recovers token-counter resets, uses request-level long-context pricing, isolates quota streams, detects low-usage weekly resets, and robustly rejects divergent slices.

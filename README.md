@@ -61,6 +61,27 @@ a model, `←`/`→` to change the metric, and `-`/`+` to change the time range.
 When output is piped or redirected, weeklygrant automatically prints compact
 text instead of the interactive UI. Pass `--json` for the full report.
 
+## Engineering impact
+
+- Eliminated 2 direct runtime dependencies (Ink and React), reducing the
+  production dependency count from 2 to 0 and the lockfile package entries from
+  92 to 52 (43.5% fewer) while retaining the interactive terminal UI.
+- Kept the v1.2.3 npm artifact at **19.4 KB packed / 50.2 KB unpacked**, below
+  enforced **20 KB / 60 KB** package-size budgets.
+- Built a streaming JSONL parser with **1 MiB read chunks** and **256-byte
+  event-type peeking**; tests validate files larger than **256 KiB** and skip a
+  **1.5 MB** conversation payload before full parsing.
+- Implemented the estimator with prefix-sum cost lanes, binary-search window
+  lookups, quota-epoch splitting, and weighted median/MAD outlier rejection;
+  bundled pricing covers **16 official model cards**.
+- Validated parsing, estimation, pricing, charts, CLI behavior, TUI rendering,
+  five-hour quota estimation, and configuration with **54 passing automated tests**. CI also runs
+  TypeScript checks, production bundling, package-size validation, and high-
+  severity dependency auditing.
+
+The repository does not collect production latency, uptime, adoption, revenue,
+or workload-volume data, so those impact metrics are not estimated here.
+
 ## What the number means
 
 weeklygrant reads token counters and weekly quota observations from your local

@@ -34,5 +34,13 @@ export function persistHideStarNudge() {
   const next = { ...readUserConfig(), hideStarNudge: true };
   const file = userConfigPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(temporary, file);
+  } finally {
+    try { fs.unlinkSync(temporary); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
 }

@@ -35,6 +35,8 @@ test("star nudge is hidden after persistHideStarNudge", () => {
     persistHideStarNudge();
     assert.equal(isStarNudgeHidden(), true);
     assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { hideStarNudge: true });
+    assert.deepEqual(fs.readdirSync(path.dirname(file)), [path.basename(file)]);
+    if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   });
 });
 

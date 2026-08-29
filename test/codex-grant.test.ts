@@ -327,6 +327,18 @@ test("parseLogFile uses the provided mtime fallback and reads token deltas", () 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("parseLogFile reports malformed candidate lines", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-malformed-"));
+  try {
+    const file = path.join(dir, "session.jsonl");
+    fs.writeFileSync(file, '{"type":"token_count",broken}\n');
+    const parsed = parseLogFile(file);
+    assert.equal(parsed.malformedLines, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("parseLogFile streams a file larger than 256 KiB and survives a line that spans chunks", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-stream-"));
   const file = path.join(dir, "session.jsonl");
@@ -452,4 +464,38 @@ test("estimateCodexGrant skips usage series unless requested", async () => {
   assert.equal(included.modelUsage.length, 1);
   assert.equal(included.modelUsageSeries.length, 1);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("estimateCodexGrant reports a five-hour grant and its weekly share", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-five-hour-"));
+  try {
+    fs.mkdirSync(path.join(root, "sessions"));
+    const file = path.join(root, "sessions", "session.jsonl");
+    const token = (timestamp: number, input: number, weekly: number, fiveHour: number) => JSON.stringify({
+      type: "token_count",
+      timestamp,
+      payload: {
+        info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: 0 } },
+        rate_limits: {
+          limit_id: "codex",
+          primary: { window_minutes: 300, used_percent: fiveHour, resets_at: 20_000 },
+          secondary: { window_minutes: 10_080, used_percent: weekly, resets_at: 700_000 },
+        },
+      },
+    });
+    fs.writeFileSync(file, [
+      JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.2-codex" } }),
+      token(1_000, 100_000, 0, 0),
+      token(2_000, 200_000, 1, 6.25),
+    ].join("\n"));
+    const report = await estimateCodexGrant({ home: root, days: Infinity });
+    assert.equal(report.fiveHour.present, true);
+    assert.equal(report.fiveHour.windowMinutes, 300);
+    assert.ok(report.fiveHour.headlineUsd > 0);
+    const weeklyShare = report.fiveHour.maxSpendPercentOfWeekly;
+    assert.ok(typeof weeklyShare === "number");
+    assert.ok(Math.abs(weeklyShare - 16) < 0.001);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

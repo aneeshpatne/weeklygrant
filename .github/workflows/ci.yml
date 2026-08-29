@@ -27,4 +27,5 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npm run check:size
+      - run: npm run check:package
       - run: npm audit --audit-level=high

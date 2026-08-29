@@ -265,6 +265,11 @@ function renderDashboard(state: TuiState, width: number) {
     statCard("Confidence", String(report.confidence).toUpperCase(), confidenceColor(report.confidence)),
     statCard("Weekly quota", report.weeklyUsedPercent == null ? "—" : `${report.weeklyUsedPercent.toFixed(1)}% used`, "cyan"),
     statCard("Resets", relativeTime(report.resetsAtMs)),
+    ...(report.fiveHour?.present ? [statCard(
+      "5-hour maximum",
+      `${usd(report.fiveHour.headlineUsd)}${report.fiveHour.maxSpendPercentOfWeekly == null ? "" : ` · ${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% weekly`}`,
+      "magenta",
+    )] : []),
   ], width, 1, { style: "round", borderColor: "gray", paddingX: 1, width: STAT_WIDTH });
   const footer = [
     `Observed spend  ${usd(report.observedTokenCostUsd)}`,

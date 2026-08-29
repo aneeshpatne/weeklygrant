@@ -6,6 +6,8 @@ export const WEEKLY_GRANT_VERSION = "weekly-grant-estimate-v2";
 export const MAX_USAGE_SERIES_POINTS = 1_000;
 const WEEKLY_MINUTES = 10_080;
 const WEEKLY_TOLERANCE = 240;
+const FIVE_HOUR_MINUTES = 300;
+const FIVE_HOUR_TOLERANCE = 30;
 const RESET_JITTER_MS = 2 * 60 * 60 * 1000;
 const RESET_DROP_POINTS = 12;
 const HARD_RESET_DROP = 25;
@@ -49,6 +51,11 @@ type JsonlFile = {
   file: string;
   mtimeMs: number;
   size: number;
+};
+
+type ScanDiagnostics = {
+  malformedLines: number;
+  unreadableFiles: number;
 };
 
 export type EstimateOptions = {
@@ -213,22 +220,33 @@ export function buildModelUsageSeries(events, maxPoints = MAX_USAGE_SERIES_POINT
   return series.sort((a, b) => a.timestampMs - b.timestampMs || a.model.localeCompare(b.model));
 }
 
-function weeklyObservation(rateLimits, timestamp, sessionId) {
-  if (!rateLimits || typeof rateLimits !== "object") return null;
-  const candidates = [rateLimits.primary, rateLimits.secondary].filter(Boolean)
-    .map((window) => ({ window, distance: Math.abs(number(window.window_minutes ?? window.windowMinutes, Infinity) - WEEKLY_MINUTES) }))
-    .filter(({ distance }) => distance <= WEEKLY_TOLERANCE)
-    .sort((a, b) => a.distance - b.distance);
-  if (!candidates.length) return null;
-  const window = candidates[0].window;
+function quotaObservations(rateLimits, timestamp, sessionId) {
+  if (!rateLimits || typeof rateLimits !== "object") return { weekly: null, fiveHour: null };
+  const windows = [rateLimits.primary, rateLimits.secondary].filter(Boolean).map((window) => ({
+    window,
+    minutes: number(window.window_minutes ?? window.windowMinutes, NaN),
+  }));
+  const pick = (target: number, tolerance: number, windowKind: "weekly" | "five_hour") => {
+    const candidate = windows
+      .map(({ window, minutes }) => ({ window, minutes, distance: Math.abs(minutes - target) }))
+      .filter(({ distance }) => distance <= tolerance)
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (!candidate) return null;
+    return {
+      timestampMs: timestamp,
+      usedPercent: number(candidate.window.used_percent ?? candidate.window.usedPercent, NaN),
+      resetsAtMs: timestampMs(candidate.window.resets_at ?? candidate.window.resetsAt),
+      limitId: String(rateLimits.limit_id ?? rateLimits.limitId ?? "codex"),
+      planType: rateLimits.plan_type ?? rateLimits.planType ?? null,
+      accountKey: "local",
+      sessionId,
+      windowKind,
+      windowMinutes: candidate.minutes,
+    };
+  };
   return {
-    timestampMs: timestamp,
-    usedPercent: number(window.used_percent ?? window.usedPercent, NaN),
-    resetsAtMs: timestampMs(window.resets_at ?? window.resetsAt),
-    limitId: String(rateLimits.limit_id ?? rateLimits.limitId ?? "codex"),
-    planType: rateLimits.plan_type ?? rateLimits.planType ?? null,
-    accountKey: "local",
-    sessionId,
+    weekly: pick(WEEKLY_MINUTES, WEEKLY_TOLERANCE, "weekly"),
+    fiveHour: pick(FIVE_HOUR_MINUTES, FIVE_HOUR_TOLERANCE, "five_hour"),
   };
 }
 
@@ -357,11 +375,13 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
   let previous = { uncachedInput: 0, cachedInput: 0, billedOutput: 0, reasoning: 0 };
   const events: any[] = [];
   const observations: any[] = [];
-  if (!fileSize) return { events, observations };
+  const fiveHourObservations: any[] = [];
+  let malformedLines = 0;
+  if (!fileSize) return { events, observations, fiveHourObservations, malformedLines };
   for (const line of readCandidateLines(file)) {
     if (!line.trim()) continue;
     let object;
-    try { object = JSON.parse(line); } catch { continue; }
+    try { object = JSON.parse(line); } catch { malformedLines += 1; continue; }
     const payload = object.payload && typeof object.payload === "object" ? object.payload : object;
     const type = object.type === "event_msg" ? payload.type : object.type;
     if (type === "session_meta") {
@@ -415,9 +435,11 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
     }
     previous = current;
     const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
-    const observation = weeklyObservation(rateLimits, at, sessionId);
+    const quota = quotaObservations(rateLimits, at, sessionId);
+    if (quota.weekly) observations.push(quota.weekly);
+    if (quota.fiveHour) fiveHourObservations.push(quota.fiveHour);
+    const observation = quota.weekly ?? quota.fiveHour;
     if (observation) {
-      observations.push(observation);
       lastLimitId = observation.limitId;
     }
     if (delta.uncachedInput + delta.cachedInput + delta.billedOutput > 0) {
@@ -434,10 +456,10 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
       });
     }
   }
-  return { events, observations };
+  return { events, observations, fiveHourObservations, malformedLines };
 }
 
-function walkJsonl(root, cutoff, output: JsonlFile[] = []) {
+function walkJsonl(root, cutoff, output: JsonlFile[] = [], diagnostics: ScanDiagnostics = { malformedLines: 0, unreadableFiles: 0 }) {
   let entries;
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
@@ -447,10 +469,10 @@ function walkJsonl(root, cutoff, output: JsonlFile[] = []) {
   }
   for (const entry of entries) {
     const target = path.join(root, entry.name);
-    if (entry.isDirectory()) walkJsonl(target, cutoff, output);
+    if (entry.isDirectory()) walkJsonl(target, cutoff, output, diagnostics);
     else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
       let stat;
-      try { stat = fs.statSync(target); } catch { continue; }
+      try { stat = fs.statSync(target); } catch { diagnostics.unreadableFiles += 1; continue; }
       if (stat.mtimeMs >= cutoff) output.push({ file: target, mtimeMs: stat.mtimeMs, size: stat.size });
     }
   }
@@ -732,18 +754,40 @@ export async function estimateCodexGrant(options: EstimateOptions = {}) {
   const home = path.resolve(options.home || String(process.env.CODEX_HOME || "").split(",")[0] || path.join(os.homedir(), ".codex"));
   const cardsPromise = loadRateCards(options.refreshPrices ? options.fetch ?? globalThis.fetch : null);
   const cutoff = Number.isFinite(options.days) ? Date.now() - Number(options.days) * 86_400_000 : -Infinity;
-  const files = [...walkJsonl(path.join(home, "sessions"), cutoff), ...walkJsonl(path.join(home, "archived_sessions"), cutoff)];
+  const diagnostics: ScanDiagnostics = { malformedLines: 0, unreadableFiles: 0 };
+  const files = [...walkJsonl(path.join(home, "sessions"), cutoff, [], diagnostics), ...walkJsonl(path.join(home, "archived_sessions"), cutoff, [], diagnostics)];
   const parsed = files.map((entry) => parseLogFile(entry.file, entry.mtimeMs, entry.size));
+  diagnostics.malformedLines = parsed.reduce((total, item) => total + item.malformedLines, 0);
   const cards = await cardsPromise;
   const events = parsed.flatMap((item) => item.events).map((event) => priceTokens(event, cards));
   const report = estimateGrantFromLogs(events, parsed.flatMap((item) => item.observations));
+  const fiveHourObservations = parsed.flatMap((item) => item.fiveHourObservations);
+  const fiveHourEstimate = fiveHourObservations.length ? estimateGrantFromLogs(events, fiveHourObservations) : null;
+  const fiveHour = fiveHourEstimate ? {
+    present: true,
+    windowMinutes: FIVE_HOUR_MINUTES,
+    headlineUsd: fiveHourEstimate.headlineUsd,
+    rawUsd: fiveHourEstimate.rawUsd,
+    confidence: fiveHourEstimate.confidence,
+    usedPercent: fiveHourEstimate.weeklyUsedPercent,
+    resetsAtMs: fiveHourEstimate.resetsAtMs,
+    validPairs: fiveHourEstimate.validPairs,
+    coveragePoints: fiveHourEstimate.coveragePoints,
+    matchedCoveragePoints: fiveHourEstimate.matchedCoveragePoints,
+    series: fiveHourEstimate.series,
+    maxSpendPercentOfWeekly: fiveHourEstimate.headlineUsd != null && report.headlineUsd != null && report.headlineUsd > 0
+      ? fiveHourEstimate.headlineUsd / report.headlineUsd * 100
+      : null,
+  } : { present: false };
   const pricingSources = [...new Set(events.filter((event) => event.eligible).map((event) => event.pricingStatus))].sort();
   return {
     ...report,
+    fiveHour,
     pricingSources,
     rateCardMode: options.refreshPrices ? "bundled-plus-models-dev" : "bundled-official",
     codexHome: home,
     filesScanned: files.length,
+    diagnostics,
     scanWindowDays: Number.isFinite(options.days) ? options.days : null,
     modelUsage: options.includeModelUsage || options.includeUsageSeries ? summarizeModelUsage(events) : [],
     modelUsageSeries: options.includeUsageSeries ? buildModelUsageSeries(events) : [],
