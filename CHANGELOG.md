@@ -7,6 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 ## 1.2.4
 
 - Added bundled official pricing for `gpt-6-astra` (short-context $10 / $50, long-context $20 / $75, Fast 2x).
+- Raised the packed npm size budget from 20 KB to 22 KB after the README grew.
 
 ## 1.2.3
 

@@ -44,7 +44,7 @@ The useful signal is fragmented across local files: cumulative token totals, mod
 | **Significant dependency removal** | Replaced Ink/React with a Node-builtin renderer: runtime dependencies went from **2 to 0** and lockfile package entries from **92 to 52** (**43.5% fewer**), while retaining the TUI. |
 | **Significant speed-up for large histories** | Replaced repeated scans with prefix-sum cost lanes and binary-search lookups. JSONL uses **1 MiB** chunks and **256-byte** type peeking; pricing overlaps discovery and usage series are conditional. No latency benchmark is published. |
 | **Significant correctness improvement across versions** | v1.2.0 added pooled fitting and reset-aware series; v1.2.1 skipped irrelevant payloads; v1.2.2 added counter-reset recovery, request-level long-context pricing, quota-stream isolation, low-usage reset detection, and divergent-slice rejection; v1.2.3 added five-hour estimation and diagnostics. |
-| **Small published artifact** | v1.2.3 is **19.4 KB packed / 50.2 KB unpacked**, below enforced **20 KB / 60 KB** budgets. |
+| **Small published artifact** | v1.2.4 is **20.3 KB packed / 52.0 KB unpacked**, below enforced **22 KB / 60 KB** budgets. |
 | **Verified behavior** | **55 automated tests pass** across parsing, estimation, pricing, charts, CLI, TUI, five-hour estimation, and configuration. CI also type-checks, bundles, smoke-tests, size-checks, and audits. |
 
 ## Features
