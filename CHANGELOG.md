@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.2.4
+
+- Added bundled official pricing for `gpt-6-astra` (short-context $10 / $50, long-context $20 / $75, Fast 2x).
+
 ## 1.2.3
 
 - Added independent detection and estimation for the Codex five-hour quota window. Reports now include the maximum five-hour API-equivalent spend and its percentage of the estimated weekly grant (for example, 100% of the five-hour window can be shown as 16% of weekly capacity).

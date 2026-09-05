@@ -45,7 +45,7 @@ The useful signal is fragmented across local files: cumulative token totals, mod
 | **Significant speed-up for large histories** | Replaced repeated scans with prefix-sum cost lanes and binary-search lookups. JSONL uses **1 MiB** chunks and **256-byte** type peeking; pricing overlaps discovery and usage series are conditional. No latency benchmark is published. |
 | **Significant correctness improvement across versions** | v1.2.0 added pooled fitting and reset-aware series; v1.2.1 skipped irrelevant payloads; v1.2.2 added counter-reset recovery, request-level long-context pricing, quota-stream isolation, low-usage reset detection, and divergent-slice rejection; v1.2.3 added five-hour estimation and diagnostics. |
 | **Small published artifact** | v1.2.3 is **19.4 KB packed / 50.2 KB unpacked**, below enforced **20 KB / 60 KB** budgets. |
-| **Verified behavior** | **54 automated tests pass** across parsing, estimation, pricing, charts, CLI, TUI, five-hour estimation, and configuration. CI also type-checks, bundles, smoke-tests, size-checks, and audits. |
+| **Verified behavior** | **55 automated tests pass** across parsing, estimation, pricing, charts, CLI, TUI, five-hour estimation, and configuration. CI also type-checks, bundles, smoke-tests, size-checks, and audits. |
 
 ## Features
 
@@ -56,7 +56,7 @@ The useful signal is fragmented across local files: cumulative token totals, mod
 | **Correct token accounting** | Handles cumulative counters, reset recovery, cached and uncached input, billed/reasoning output, long-context tiers, and fast-service multipliers. |
 | **Interactive dashboards** | Graphs grant value, quota used, and observed cost over 24h, 7d, 30d, or all history; usage drills into token and API-value series by model. |
 | **Machine-readable output** | <code>--json</code> includes estimate, pricing sources, diagnostics, scan counts, measurement data, series, model usage, and Codex home. <code>--redact</code> hides the local path. |
-| **Deterministic pricing** | Bundled official pricing covers **16 model cards** and works offline. <code>--refresh-prices</code> makes one bounded <code>models.dev</code> request only to fill unknown models. |
+| **Deterministic pricing** | Bundled official pricing covers **17 model cards** and works offline. <code>--refresh-prices</code> makes one bounded <code>models.dev</code> request only to fill unknown models. |
 
 > [!NOTE]
 > The interactive headline stays hidden until the signal reaches medium or high confidence. With enough history to graph, the dashboard still shows measured quota and cost series and explains what is missing.

@@ -193,6 +193,13 @@ test("official GPT-5.6 Sol pricing includes long context and Codex Fast mode", (
   assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 61);
 });
 
+test("official GPT-6 Astra pricing includes long context and Fast mode", () => {
+  const base = { model: "gpt-6-astra", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 1 }).costUsd, 61);
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 97);
+  assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 122);
+});
+
 test("price refresh fills unknown cards without overriding bundled official cards", async () => {
   const cards = await loadRateCards(async () => ({
     ok: true,
