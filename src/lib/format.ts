@@ -13,3 +13,10 @@ export const compactFormat = new Intl.NumberFormat("en-US", {
 });
 
 export const dateFormat = new Intl.DateTimeFormat();
+
+export function signedPercent(value, digits = 0) {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  const amount = Number(value);
+  const places = Math.abs(amount) >= 9.5 ? 0 : Math.max(digits, 1);
+  return `${amount > 0 ? "+" : ""}${amount.toFixed(places)}%`;
+}

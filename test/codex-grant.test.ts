@@ -13,6 +13,7 @@ import {
   hasGraphableSeries,
   isStableEstimate,
   loadRateCards,
+  summarizeGrantHistory,
   parseLogFile,
   priceTokens,
   splitEpochs,
@@ -164,6 +165,42 @@ test("a single quote is not graphable", () => {
   assert.equal(isStableEstimate("medium"), true);
   assert.equal(isStableEstimate("high"), true);
   assert.equal(isStableEstimate("low"), false);
+});
+
+test("grant history compares the current week with peak and average comparable weeks", () => {
+  const hour = 3_600_000;
+  const hours = [0, 1, 2, 3, 4, 13];
+  const events: any[] = [];
+  const observations: any[] = [];
+  for (const offset of hours) {
+    observations.push(observation(offset * hour, hours.indexOf(offset) * 5, 20 * hour));
+    if (offset) events.push(pricedEvent(offset * hour - hour / 2, 5));
+  }
+  const secondStart = 20 * hour;
+  const secondReset = secondStart + 7 * 24 * hour;
+  for (const offset of hours) {
+    observations.push(observation(secondStart + offset * hour, hours.indexOf(offset) * 5, secondReset));
+    if (offset) events.push(pricedEvent(secondStart + offset * hour - hour / 2, 3));
+  }
+  const result = estimateGrantFromLogs(events, observations);
+  assert.equal(result.headlineUsd, 60);
+  assert.equal(result.history.peakUsd, 100);
+  assert.equal(result.history.averageUsd, 80);
+  assert.equal(result.history.comparableWeeks, 2);
+  assert.equal(result.history.vsPeakPercent, -40);
+  assert.equal(result.history.vsAveragePercent, -25);
+});
+
+test("grant history ignores short or unstable epochs", () => {
+  const result = summarizeGrantHistory([
+    { headlineUsd: 100, confidence: "high", coveragePoints: 80, startMs: 0, endMs: 3 * 86_400_000 },
+    { headlineUsd: 35, confidence: "medium", coveragePoints: 35, startMs: 4 * 86_400_000, endMs: 4 * 86_400_000 + 27 * 60_000 },
+    { headlineUsd: 60, confidence: "medium", coveragePoints: 77, startMs: 5 * 86_400_000, endMs: 11 * 86_400_000 },
+  ], 60);
+  assert.equal(result.comparableWeeks, 2);
+  assert.equal(result.peakUsd, 100);
+  assert.equal(result.averageUsd, 80);
+  assert.equal(result.vsPeakPercent, -40);
 });
 
 test("a new epoch does not graph a stale estimate as a heartbeat", () => {

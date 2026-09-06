@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+## 1.2.5
+
+- Estimate dashboard and text output now compare the current weekly value with the peak and average of comparable prior weeks in the scanned window.
+
 ## 1.2.4
 
 - Added bundled official pricing for `gpt-6-astra` (short-context $10 / $50, long-context $20 / $75, Fast 2x).

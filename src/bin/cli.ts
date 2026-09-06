@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "../lib/args.js";
 import { estimateCodexGrant } from "../lib/codex-grant.js";
-import { integerFormat, moneyFormat } from "../lib/format.js";
+import { integerFormat, moneyFormat, signedPercent } from "../lib/format.js";
 
 const args = process.argv.slice(2);
 
@@ -97,6 +97,11 @@ async function main() {
   console.log(`${report.label} · ${report.confidence} confidence · based on ${basis.toFixed(1)} quota points`);
   if (report.weeklyUsedPercent != null) console.log(`Quota used: ${report.weeklyUsedPercent.toFixed(1)}%`);
   console.log(`Observed spend: ${money(report.observedTokenCostUsd)} · Current signal: ${money(report.rawUsd)}`);
+  if (report.history?.comparableWeeks >= 2) {
+    const vsPeak = signedPercent(report.history.vsPeakPercent) || "n/a";
+    const vsAverage = signedPercent(report.history.vsAveragePercent) || "n/a";
+    console.log(`Vs peak: ${vsPeak} (${money(report.history.peakUsd)}) · Vs average: ${vsAverage} (${money(report.history.averageUsd)}) · ${report.history.comparableWeeks} comparable weeks`);
+  }
   if (report.fiveHour?.present) {
     const share = report.fiveHour.maxSpendPercentOfWeekly == null ? "unknown share" : `${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% of weekly`;
     console.log(`5-hour maximum: ${money(report.fiveHour.headlineUsd)} · ${share} · ${report.fiveHour.confidence} confidence`);

@@ -15,6 +15,8 @@ const MIN_PERCENT_DELTA = 0.5;
 const MIN_WEEK_USD = 1;
 const MAX_WEEK_USD = 25_000;
 const MEDIAN_SAMPLE_COUNT = 7;
+const HISTORY_MIN_COVERAGE = 20;
+const HISTORY_MIN_DURATION_MS = 12 * 60 * 60 * 1000;
 const LONG_CONTEXT_TOKENS = 272_000;
 const READ_CHUNK = 1024 * 1024;
 const TYPE_PEEK_BYTES = 256;
@@ -560,6 +562,33 @@ export function isStableEstimate(confidence) {
   return confidence === "medium" || confidence === "high";
 }
 
+function percentDelta(current, baseline) {
+  if (!(current > 0) || !(baseline > 0)) return null;
+  return (current - baseline) / baseline * 100;
+}
+
+export function summarizeGrantHistory(epochFits, currentHeadlineUsd: number | null = null) {
+  const comparable = epochFits.filter((epoch) => (
+    epoch.headlineUsd > 0
+    && isStableEstimate(epoch.confidence)
+    && epoch.coveragePoints >= HISTORY_MIN_COVERAGE
+    && epoch.endMs - epoch.startMs >= HISTORY_MIN_DURATION_MS
+  ));
+  if (comparable.length < 2) {
+    return { peakUsd: null, averageUsd: null, comparableWeeks: comparable.length, vsPeakPercent: null, vsAveragePercent: null };
+  }
+  const values = comparable.map((epoch) => epoch.headlineUsd);
+  const peakUsd = Math.max(...values);
+  const averageUsd = values.reduce((total, value) => total + value, 0) / values.length;
+  return {
+    peakUsd,
+    averageUsd,
+    comparableWeeks: comparable.length,
+    vsPeakPercent: percentDelta(currentHeadlineUsd, peakUsd),
+    vsAveragePercent: percentDelta(currentHeadlineUsd, averageUsd),
+  };
+}
+
 export function hasGraphableSeries(series, minPoints = 2) {
   if (!Array.isArray(series) || series.length < minPoints) return false;
   return ["valueUsd", "usedPercent", "observedCostUsd"].some(
@@ -625,6 +654,7 @@ export function estimateGrantFromLogs(events, observations) {
   const epochs = splitEpochs(collapsed);
   const lanes = buildCostLanes(events);
   const series: any[] = [];
+  const epochFits: any[] = [];
   let active: any = null;
   let pricedEvents = 0;
   let pendingEvents = 0;
@@ -689,10 +719,19 @@ export function estimateGrantFromLogs(events, observations) {
       }
     }
     const rawUsd = inlierRates.at(-1) ?? null;
+    const coveragePoints = Math.max(0, epoch.at(-1).usedPercent - first.usedPercent);
+    const headlineUsd = pooledWeekUsd(matchedCost, matchedPercent) ?? rawUsd;
+    epochFits.push({
+      headlineUsd,
+      confidence: classifyConfidence(inlierRates.length, matchedPercent, inlierRates),
+      coveragePoints,
+      startMs: first.timestampMs,
+      endMs: epoch.at(-1).timestampMs,
+    });
     active = {
       epoch, rawUsd, validPairs: inlierRates.length, inlierRates,
-      headlineUsd: pooledWeekUsd(matchedCost, matchedPercent) ?? rawUsd,
-      coveragePoints: Math.max(0, epoch.at(-1).usedPercent - first.usedPercent),
+      headlineUsd,
+      coveragePoints,
       matchedCoveragePoints: matchedPercent,
       observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId),
       outlierPairs: candidates.length - inlierRates.length,
@@ -704,6 +743,7 @@ export function estimateGrantFromLogs(events, observations) {
     algorithm: WEEKLY_GRANT_VERSION,
     headlineUsd: active?.headlineUsd ?? null,
     rawUsd: active?.rawUsd ?? null,
+    history: summarizeGrantHistory(epochFits, active?.headlineUsd ?? null),
     confidence,
     label: confidence === "medium" || confidence === "high" ? "Stable Weekly API Value" : "Early Weekly API Value",
     coveragePoints: active?.coveragePoints ?? 0,

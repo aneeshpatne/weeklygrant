@@ -44,14 +44,14 @@ The useful signal is fragmented across local files: cumulative token totals, mod
 | **Significant dependency removal** | Replaced Ink/React with a Node-builtin renderer: runtime dependencies went from **2 to 0** and lockfile package entries from **92 to 52** (**43.5% fewer**), while retaining the TUI. |
 | **Significant speed-up for large histories** | Replaced repeated scans with prefix-sum cost lanes and binary-search lookups. JSONL uses **1 MiB** chunks and **256-byte** type peeking; pricing overlaps discovery and usage series are conditional. No latency benchmark is published. |
 | **Significant correctness improvement across versions** | v1.2.0 added pooled fitting and reset-aware series; v1.2.1 skipped irrelevant payloads; v1.2.2 added counter-reset recovery, request-level long-context pricing, quota-stream isolation, low-usage reset detection, and divergent-slice rejection; v1.2.3 added five-hour estimation and diagnostics. |
-| **Small published artifact** | v1.2.4 is **20.3 KB packed / 52.0 KB unpacked**, below enforced **22 KB / 60 KB** budgets. |
-| **Verified behavior** | **55 automated tests pass** across parsing, estimation, pricing, charts, CLI, TUI, five-hour estimation, and configuration. CI also type-checks, bundles, smoke-tests, size-checks, and audits. |
+| **Small published artifact** | v1.2.5 is **20.6 KB packed / 53.6 KB unpacked**, below enforced **22 KB / 60 KB** budgets. |
+| **Verified behavior** | **57 automated tests pass** across parsing, estimation, pricing, charts, CLI, TUI, five-hour estimation, grant history, and configuration. CI also type-checks, bundles, smoke-tests, size-checks, and audits. |
 
 ## Features
 
 | Area | What the project provides |
 | --- | --- |
-| **Weekly estimate** | Prices token deltas, matches cost to weekly quota movement, and reports an API-equivalent weekly value with confidence. |
+| **Weekly estimate** | Prices token deltas, matches cost to weekly quota movement, and reports an API-equivalent weekly value with confidence, plus how far the current week sits from the scanned peak and average. |
 | **Quota-aware modeling** | Detects weekly and five-hour windows, splits resets and plan changes into epochs, ignores small downward jitter, and isolates quota IDs. |
 | **Correct token accounting** | Handles cumulative counters, reset recovery, cached and uncached input, billed/reasoning output, long-context tiers, and fast-service multipliers. |
 | **Interactive dashboards** | Graphs grant value, quota used, and observed cost over 24h, 7d, 30d, or all history; usage drills into token and API-value series by model. |

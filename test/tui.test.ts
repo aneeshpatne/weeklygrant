@@ -151,6 +151,23 @@ test("renderFrame prints the splash, dashboard, and usage copy", () => {
   assert.match(dash, /HIGH/);
   assert.match(dash, /graph/);
   assert.equal(dash.includes("╰──────────────────────╯ ╰──────────────────────╯"), true);
+  assert.equal(dash.includes("Vs scanned peak"), false);
+
+  const historyDash = stripAnsi(renderFrame(applyReport(createState("estimate"), report({
+    history: {
+      peakUsd: 100,
+      averageUsd: 80,
+      comparableWeeks: 6,
+      vsPeakPercent: -40,
+      vsAveragePercent: -25,
+    },
+  })), 80).join("\n"));
+  assert.match(historyDash, /Vs scanned peak/);
+  assert.match(historyDash, /-40%/);
+  assert.match(historyDash, /\$100\.00/);
+  assert.match(historyDash, /Vs scanned average/);
+  assert.match(historyDash, /-25%/);
+  assert.match(historyDash, /\$80\.00/);
 
   const resetDash = stripAnsi(renderFrame(applyReport(createState("estimate"), report({
     series: [

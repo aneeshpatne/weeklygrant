@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { Worker } from "node:worker_threads";
 import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
 import { lineChart, RESET_DOT, RESET_MARK } from "../lib/chart.js";
-import { dateFormat, integerFormat, moneyFormat } from "../lib/format.js";
+import { dateFormat, integerFormat, moneyFormat, signedPercent } from "../lib/format.js";
 import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
 import {
   attach,
@@ -117,6 +117,20 @@ export function visibleScreen(state: TuiState): TuiScreen {
 
 function confidenceColor(confidence: string): Color {
   return { none: "gray", low: "yellow", medium: "cyan", high: "green" }[confidence] as Color || "white";
+}
+
+function deltaColor(percent): Color {
+  if (percent == null || !Number.isFinite(percent)) return "gray";
+  if (percent <= -20) return "red";
+  if (percent < -1) return "yellow";
+  if (percent >= 1) return "green";
+  return "gray";
+}
+
+function historyCard(label: string, percent, baselineUsd) {
+  const delta = signedPercent(percent);
+  const value = delta == null ? "—" : `${delta} · ${usd(baselineUsd)}`;
+  return statCard(label, value, deltaColor(percent));
 }
 
 function statCard(label: string, value: string, color: Color = "white") {
@@ -270,6 +284,10 @@ function renderDashboard(state: TuiState, width: number) {
       `${usd(report.fiveHour.headlineUsd)}${report.fiveHour.maxSpendPercentOfWeekly == null ? "" : ` · ${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% weekly`}`,
       "magenta",
     )] : []),
+    ...(estimateReady && report.history?.comparableWeeks >= 2 ? [
+      historyCard("Vs scanned peak", report.history.vsPeakPercent, report.history.peakUsd),
+      historyCard("Vs scanned average", report.history.vsAveragePercent, report.history.averageUsd),
+    ] : []),
   ], width, 1, { style: "round", borderColor: "gray", paddingX: 1, width: STAT_WIDTH });
   const footer = [
     `Observed spend  ${usd(report.observedTokenCostUsd)}`,
