@@ -33,7 +33,7 @@ function drawLine(pixels: number[][], x0: number, y0: number, x1: number, y1: nu
 }
 
 export function lineChart(points, field: string, width: number, height: number, prefix: string) {
-  const clean = points.filter((point) => Number.isFinite(Number(point[field])));
+  const clean = points.filter((point) => point[field] != null && Number.isFinite(Number(point[field])));
   if (!clean.length) return ["No measurements in this range"];
   const cellWidth = Math.max(12, width);
   const pixelWidth = cellWidth * 2;
@@ -70,7 +70,7 @@ export function lineChart(points, field: string, width: number, height: number, 
     } else drawLine(pixels, previous.x, previous.y, point.x, point.y);
   });
   const format = (value: number) => prefix === "$" ? usd(value) : prefix === "%" ? `${value.toFixed(1)}%` : compactFormat.format(value);
-  const middle = min + span / 2;
+  const middle = (min + max) / 2;
   const labelWidth = Math.max(format(min).length, format(max).length, format(middle).length);
   return pixels.map((row, index) => {
     const axis = index === 0 ? format(max) : index === Math.floor(height / 2) ? format(middle) : index === height - 1 ? format(min) : "";

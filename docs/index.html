@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="weeklygrant estimates the API-equivalent value of a weekly Codex grant from local session logs.">
+  <title>weeklygrant — inspect your Codex grant</title>
+  <style>
+    :root { color-scheme: dark; --bg: #071014; --panel: #0d1b20; --line: #1d3a42; --text: #e8f4f4; --muted: #9ab5b8; --cyan: #6ee7e7; --green: #8be28b; --yellow: #f3d36b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: radial-gradient(circle at 80% 0, #123740 0, transparent 38rem), var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    a { color: var(--cyan); }
+    .wrap { width: min(1080px, calc(100% - 40px)); margin: 0 auto; }
+    header { padding: 80px 0 56px; }
+    .eyebrow { color: var(--cyan); font: 700 13px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { max-width: 780px; margin: 14px 0 20px; font-size: clamp(42px, 8vw, 82px); line-height: .98; letter-spacing: -.055em; }
+    .lede { max-width: 680px; margin: 0; color: var(--muted); font-size: clamp(18px, 2.5vw, 23px); }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .button { display: inline-block; border: 1px solid var(--line); border-radius: 9px; padding: 10px 16px; text-decoration: none; color: var(--text); background: #10252a; }
+    .button.primary { border-color: var(--cyan); color: #062024; background: var(--cyan); }
+    section { padding: 34px 0; }
+    h2 { margin: 0 0 16px; font-size: 28px; letter-spacing: -.025em; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .card { border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: color-mix(in srgb, var(--panel) 86%, transparent); }
+    .card h3 { margin: 0 0 7px; font-size: 18px; }
+    .card p { margin: 0; color: var(--muted); }
+    .terminal { overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 22px; background: #050b0d; color: var(--green); font: 14px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .terminal .dim { color: var(--muted); }
+    .note { border-left: 3px solid var(--yellow); padding: 4px 0 4px 16px; color: var(--muted); }
+    footer { padding: 48px 0 64px; color: var(--muted); font-size: 14px; }
+    @media (max-width: 720px) { .wrap { width: min(100% - 28px, 1080px); } header { padding: 52px 0 34px; } .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="wrap">
+    <div class="eyebrow">Local-first · zero runtime dependencies</div>
+    <h1>See what your weekly Codex grant is worth.</h1>
+    <p class="lede">weeklygrant reads local Codex session history, prices token usage, and pairs it with observed quota movement to produce a transparent API-equivalent planning estimate.</p>
+    <div class="actions">
+      <a class="button primary" href="https://www.npmjs.com/package/weeklygrant">Install from npm</a>
+      <a class="button" href="https://github.com/aneeshpatne/weeklygrant">View source on GitHub</a>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section aria-labelledby="how-it-works">
+      <h2 id="how-it-works">A useful signal from local history</h2>
+      <div class="grid">
+        <article class="card"><h3>Quota-aware</h3><p>Handles weekly and five-hour windows, resets, plan changes, and separate quota streams.</p></article>
+        <article class="card"><h3>Correct accounting</h3><p>Prices cached input, uncached input, output, long context, and Fast service tiers.</p></article>
+        <article class="card"><h3>Inspectable</h3><p>Shows confidence, diagnostics, observed spend, model usage, charts, and machine-readable JSON.</p></article>
+      </div>
+    </section>
+
+    <section aria-labelledby="try-it">
+      <h2 id="try-it">Try it in seconds</h2>
+      <div class="terminal"><span class="dim">$</span> npx weeklygrant
+<span class="dim">Scanning Codex sessions and pricing tokens…</span>
+<span class="dim">Estimated weekly API value</span>  <strong>$63.05</strong>
+<span class="dim">medium confidence · 5% quota used · reset in 167h</span>
+
+<span class="dim">$</span> npx weeklygrant --json --redact
+<span class="dim"># complete report for scripts, dashboards, and audits</span></div>
+    </section>
+
+    <section aria-labelledby="honest-estimates">
+      <h2 id="honest-estimates">Estimates with their limits visible</h2>
+      <p class="note">The value is API-equivalent planning data, not a Codex bill, credit balance, guaranteed spending maximum, or subscription entitlement. Early estimates are labeled low confidence; missing prices are never treated as free usage.</p>
+    </section>
+  </main>
+
+  <footer class="wrap">weeklygrant · <a href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Documentation</a> · <a href="https://github.com/aneeshpatne/weeklygrant/blob/main/LICENSE">MIT License</a></footer>
+</body>
+</html>

@@ -210,6 +210,7 @@ type ConsoleFns = Pick<Console, "log" | "info" | "warn" | "error" | "debug">;
 
 export type Terminal = {
   columns: number;
+  rows: number;
   writeFrame: (lines: string[]) => void;
   onKey: (handler: (key: TermKey) => void) => void;
   onResize: (handler: () => void) => void;
@@ -270,6 +271,9 @@ export function attach(stdin: NodeJS.ReadStream = process.stdin, stdout: NodeJS.
   return {
     get columns() {
       return stdout.columns || 80;
+    },
+    get rows() {
+      return stdout.rows || 24;
     },
     writeFrame(lines: string[]) {
       stdout.write(`\x1b[H\x1b[J${lines.join("\n")}`);

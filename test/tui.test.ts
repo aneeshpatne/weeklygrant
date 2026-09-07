@@ -4,9 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { hasGraphableSeries, isStableEstimate } from "../src/lib/codex-grant.js";
-import { normalizeKey, stripAnsi } from "../src/bin/term.js";
+import { normalizeKey, stripAnsi, visibleWidth } from "../src/bin/term.js";
 import {
   applyReport,
+  applyError,
   createState,
   handleKey,
   renderFrame,
@@ -136,6 +137,45 @@ test("dashboard and usage keys cycle metric, range, and model", () => {
   assert.equal(handleKey(usage, key("down")).state.modelIndex, 1);
   assert.equal(handleKey(usage, key("-")).state.rangeIndex, 2);
   assert.equal(handleKey(usage, key("+")).state.rangeIndex, 3);
+});
+
+test("an early estimate is visible even with only one measurement", () => {
+  const state = applyReport(createState(), report({ confidence: "low", validPairs: 1, coveragePoints: 1, series: [] }));
+  assert.equal(visibleScreen(state), "dashboard");
+  const frame = stripAnsi(renderFrame(state).join("\n"));
+  assert.match(frame, /\$42\.00/);
+  assert.match(frame, /Early estimate/);
+  assert.doesNotMatch(frame, /withheld/);
+});
+
+test("sub-day and zero-day ranges render and cycle without crashing", () => {
+  for (const scanWindowDays of [0, 0.5]) {
+    let state = applyReport(createState(), report({ scanWindowDays }));
+    assert.doesNotThrow(() => renderFrame(state));
+    state = handleKey(state, key("down")).state;
+    assert.equal(state.rangeIndex, 0);
+    assert.doesNotThrow(() => renderFrame(state));
+  }
+});
+
+test("small terminals retain the headline, chart, and controls within the viewport", () => {
+  for (const view of ["estimate", "usage"] as const) {
+    const state = applyReport(createState(view), report());
+    for (const columns of [40, 80]) {
+      const lines = renderFrame(state, columns, 24);
+      assert.ok(lines.length < 24);
+      assert.ok(lines.every((line) => visibleWidth(line) < columns));
+      assert.match(stripAnsi(lines.join("\n")), view === "estimate" ? /\$42\.00/ : /gpt-5\.2-codex/);
+      assert.match(stripAnsi(lines.join("\n")), /quit/);
+    }
+  }
+});
+
+test("errors and usage screens support rescan and Ctrl-C exits immediately", () => {
+  for (const state of [applyError(createState(), "read failed"), applyReport(createState("usage"), report())]) {
+    assert.deepEqual(handleKey(state, key("r")).actions, ["retry"]);
+    assert.deepEqual(handleKey(state, key("ctrl-c")).actions, ["quit"]);
+  }
 });
 
 test("renderFrame prints the splash, dashboard, and usage copy", () => {

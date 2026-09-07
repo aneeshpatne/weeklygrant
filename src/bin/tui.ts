@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
 import { lineChart, RESET_DOT, RESET_MARK } from "../lib/chart.js";
@@ -9,6 +10,7 @@ import {
   box,
   isQuitKey,
   padX,
+  padVisible,
   spaceBetween,
   style,
   type Color,
@@ -84,6 +86,9 @@ export function relativeTime(value) {
 }
 
 export function withheldReason(report) {
+  if (report.filesScanned === 0) return "No session logs found; check --home or try --all";
+  if (report.pendingEvents > 0 && report.validPairs === 0) return "Usage has missing prices; inspect weeklygrant usage or try --refresh-prices";
+  if (report.weeklyUsedPercent == null) return "No weekly quota observations found in the scanned logs";
   const needsPairs = Math.max(0, 2 - report.validPairs);
   const coverage = Number.isFinite(report.matchedCoveragePoints) ? report.matchedCoveragePoints : report.coveragePoints;
   const needsCoverage = Math.max(0, 5 - coverage);
@@ -111,7 +116,7 @@ export function visibleScreen(state: TuiState): TuiScreen {
   if (state.phase === "error") return "error";
   if (state.phase === "leaving") return "thanks";
   if (state.view === "usage") return "usage";
-  if (!isStableEstimate(state.report?.confidence) && !hasGraphableSeries(state.report?.series)) return "splash";
+  if (state.report?.headlineUsd == null && !hasGraphableSeries(state.report?.series)) return "splash";
   return "dashboard";
 }
 
@@ -163,7 +168,8 @@ function hint(pairs: Array<[string, string]>) {
 function rangesFor(view: TuiView, report: any): ReadonlyArray<readonly [string, number]> {
   if (view === "usage" || !Number.isFinite(report?.scanWindowDays)) return RANGES;
   const availableMs = report.scanWindowDays * 86_400_000;
-  return RANGES.filter(([, rangeMs]) => Number.isFinite(rangeMs) && rangeMs <= availableMs);
+  const ranges = RANGES.filter(([, rangeMs]) => Number.isFinite(rangeMs) && rangeMs <= availableMs);
+  return ranges.length ? ranges : [[`${report.scanWindowDays}d`, availableMs]];
 }
 
 function rangeTabs(rangeIndex: number, ranges = RANGES) {
@@ -186,17 +192,38 @@ function chartPanel(title: string, chart: string[], color: Color, left: string, 
 
 function keys(screen: TuiScreen) {
   if (screen === "splash") return hint([["r", "rescan"], ["q", "quit"]]);
-  if (screen === "usage") return hint([["↑/↓", "model"], ["←/→", "metric"], ["-/+", "range"], ["q", "quit"]]);
+  if (screen === "usage") return hint([["↑/↓", "model"], ["←/→", "metric"], ["-/+", "range"], ["r", "rescan"], ["q", "quit"]]);
   if (screen === "dashboard") return hint([["←/→", "graph"], ["↑/↓", "range"], ["r", "rescan"], ["q", "quit"]]);
   if (screen === "thanks") return hint([["s", "open"], ["n", "don't show again"], ["q", "quit"]]);
   return hint([["q", "quit"]]);
 }
 
-export function renderFrame(state: TuiState, columns = 80) {
-  const width = Math.max(20, columns - 2);
+export function renderFrame(state: TuiState, columns = 80, rows = Infinity) {
+  const width = Math.max(1, columns - 2);
   const screen = visibleScreen(state);
-  const lines = renderScreen(state, screen, width);
-  return padX(lines, 1);
+  let lines = renderScreen(state, screen, width);
+  if (lines.length >= rows && (screen === "dashboard" || screen === "usage")) {
+    const report = state.report;
+    const usage = screen === "usage";
+    const model = report.modelUsage?.[state.modelIndex];
+    const metric = usage ? USAGE_METRICS[state.metricIndex] : METRICS[state.metricIndex].slice(1);
+    const ranges = usage ? RANGES : rangesFor(state.view, report);
+    const [range, rangeMs] = ranges[state.rangeIndex] || ranges[0];
+    const cutoff = Number.isFinite(rangeMs) ? Date.now() - rangeMs : -Infinity;
+    const points = (usage ? report.modelUsageSeries : report.series).filter((point) => point.timestampMs >= cutoff && (!usage || point.model === model?.model));
+    lines = [
+      style(usage ? `weeklygrant usage · ${model?.model || "No usage"}` : `weeklygrant · ${usd(report.headlineUsd)} estimated weekly`, { color: "cyan", bold: true }),
+      usage ? `Total ${integerFormat.format(model?.totalTokens || 0)} tokens · ${usd(model?.apiValueUsd)} API value`
+        : `${report.confidence} confidence · Quota ${report.weeklyUsedPercent ?? "—"}% · Reset ${relativeTime(report.resetsAtMs)}`,
+      `Observed cost ${usd(report.observedTokenCostUsd)} · ${report.pendingEvents} unpriced events`,
+      ...(!usage && !isStableEstimate(report.confidence) ? [withheldReason(report)] : []),
+      `${metric[0]} · ${range}`,
+      ...lineChart(points, metric[1], Math.max(1, width - 14), Math.max(1, rows - 9), metric[2]),
+      `q quit · r rescan · ${usage ? "↑↓ model · ←→ metric · -/+ range" : "←→ graph · ↑↓ range"}`,
+      "API-equivalent planning estimate; not a bill.",
+    ];
+  }
+  return padX(lines.slice(0, Math.max(1, rows - 1)).map((line) => padVisible(line, width).trimEnd()), 1);
 }
 
 function renderScreen(state: TuiState, screen: TuiScreen, width: number): string[] {
@@ -210,7 +237,7 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
     ];
   }
   if (screen === "error") {
-    return [style(`weeklygrant: ${state.error || "unknown error"}`, { color: "red" })];
+    return [style(`weeklygrant: ${state.error || "unknown error"}`, { color: "red" }), keys("splash")];
   }
   if (screen === "thanks") {
     const boxWidth = Math.min(width, 64);
@@ -239,13 +266,13 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
       style("⚠  Estimate not ready", { bold: true, color: "yellow" }),
       "",
       "There is not enough weekly-quota history to graph or estimate yet.",
-      "The dollar value stays hidden until there is a stable weekly signal.",
+      `Observed API-equivalent cost: ${usd(report.observedTokenCostUsd)}`,
       "",
       style(`Confidence: ${report.confidence} · ${report.validPairs} valid pair${report.validPairs === 1 ? "" : "s"} · ${report.coveragePoints.toFixed(1)} quota points`, { dim: true }),
       style(`${withheldReason(report)}.`, { color: "yellow" }),
       "",
       "Use Codex normally, then rescan after weekly usage has moved.",
-      style("The estimate dashboard unlocks at medium or high confidence.", { dim: true }),
+      style("An early estimate appears as soon as cost matches quota movement.", { dim: true }),
     ], { style: "double", borderColor: "yellow", paddingX: 2, paddingY: 1, width: Math.min(width, 78) });
     return [
       style("weeklygrant", { bold: true, color: "cyan" }),
@@ -275,12 +302,12 @@ function renderDashboard(state: TuiState, width: number) {
   const chart = lineChart(points, field, chartWidth, 9, suffix);
   const panelWidth = Math.min(width, chartWidth + 16);
   const cards = wrapCards([
-    statCard("Estimated weekly API value", usd(estimateReady ? report.headlineUsd : null), estimateReady ? "green" : "gray"),
+    statCard("Estimated weekly API value", usd(report.headlineUsd), estimateReady ? "green" : "yellow"),
     statCard("Confidence", String(report.confidence).toUpperCase(), confidenceColor(report.confidence)),
     statCard("Weekly quota", report.weeklyUsedPercent == null ? "—" : `${report.weeklyUsedPercent.toFixed(1)}% used`, "cyan"),
     statCard("Resets", relativeTime(report.resetsAtMs)),
     ...(report.fiveHour?.present ? [statCard(
-      "5-hour maximum",
+      "5-hour estimate",
       `${usd(report.fiveHour.headlineUsd)}${report.fiveHour.maxSpendPercentOfWeekly == null ? "" : ` · ${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% weekly`}`,
       "magenta",
     )] : []),
@@ -291,14 +318,14 @@ function renderDashboard(state: TuiState, width: number) {
   ], width, 1, { style: "round", borderColor: "gray", paddingX: 1, width: STAT_WIDTH });
   const footer = [
     `Observed spend  ${usd(report.observedTokenCostUsd)}`,
-    `Current signal  ${usd(estimateReady ? report.rawUsd : null)}`,
+    `Current signal  ${usd(report.rawUsd)}`,
     `Coverage  ${report.coveragePoints.toFixed(1)} pts`,
   ].join("   ");
   return [
     spaceBetween(style("weeklygrant", { bold: true, color: "cyan" }), style(`${report.filesScanned} session files · ${report.algorithm}`, { dim: true }), width),
     "",
     ...cards,
-    ...(!estimateReady ? ["", style(`Estimate withheld · ${withheldReason(report)}.`, { color: "yellow" })] : []),
+    ...(!estimateReady ? ["", style(`${report.headlineUsd == null ? "Estimate unavailable" : "Early estimate · low confidence"} · ${withheldReason(report)}.`, { color: "yellow" })] : []),
     "",
     ...chartPanel(title, chart, metric === "grant" ? "green" : metric === "quota" ? "cyan" : "yellow",
       dateFormat.format(points[0]?.timestampMs || Date.now()),
@@ -393,11 +420,6 @@ export function tickLoading(state: TuiState, elapsedMs: number): TuiState {
   };
 }
 
-export function tickThankYou(state: TuiState): TuiState {
-  if (state.phase !== "leaving") return state;
-  return { ...state, spinner: state.spinner + 1 };
-}
-
 function requestQuit(state: TuiState): { state: TuiState; actions: TuiAction[] } {
   const usedApp = state.phase === "ready";
   if (!usedApp || isStarNudgeHidden()) return { state, actions: ["quit"] };
@@ -405,6 +427,7 @@ function requestQuit(state: TuiState): { state: TuiState; actions: TuiAction[] }
 }
 
 export function handleKey(state: TuiState, key: TermKey): { state: TuiState; actions: TuiAction[] } {
+  if (key.ctrl && key.input === "c") return { state, actions: ["quit"] };
   const screen = visibleScreen(state);
   if (screen === "thanks") {
     if (key.input === "n") return { state, actions: ["hide-nudge", "quit"] };
@@ -413,13 +436,12 @@ export function handleKey(state: TuiState, key: TermKey): { state: TuiState; act
     return { state, actions: [] };
   }
   if (isQuitKey(key)) return requestQuit(state);
+  if (key.input === "r" && state.phase !== "loading") return { state: { ...state, phase: "loading", report: null, error: null, spinner: 0, seconds: 0 }, actions: ["retry"] };
   if (screen === "splash") {
-    if (key.input === "r") return { state: { ...state, phase: "loading", report: null, error: null, spinner: 0, seconds: 0 }, actions: ["retry"] };
     return { state, actions: [] };
   }
   if (screen === "dashboard") {
     const rangeCount = rangesFor(state.view, state.report).length;
-    if (key.input === "r") return { state: { ...state, phase: "loading", report: null, error: null, spinner: 0, seconds: 0 }, actions: ["retry"] };
     if (key.leftArrow) return { state: { ...state, metricIndex: (state.metricIndex + METRICS.length - 1) % METRICS.length }, actions: [] };
     if (key.rightArrow) return { state: { ...state, metricIndex: (state.metricIndex + 1) % METRICS.length }, actions: [] };
     if (key.upArrow) return { state: { ...state, rangeIndex: (state.rangeIndex + rangeCount - 1) % rangeCount }, actions: [] };
@@ -442,14 +464,19 @@ export function handleKey(state: TuiState, key: TermKey): { state: TuiState; act
 function openInBrowser(url: string) {
   const options = { stdio: "ignore" as const, detached: true };
   try {
-    if (process.platform === "darwin") spawn("open", [url], options).unref();
-    else if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], options).unref();
-    else spawn("xdg-open", [url], options).unref();
+    const child = process.platform === "darwin" ? spawn("open", [url], options)
+      : process.platform === "win32" ? spawn("cmd", ["/c", "start", "", url], options)
+      : spawn("xdg-open", [url], options);
+    child.on("error", () => {});
+    child.unref();
   } catch {}
 }
 
 function estimateInWorker(options): { worker: Worker; done: Promise<any> } {
-  const worker = new Worker(new URL("./estimate-worker.js", import.meta.url), { workerData: options });
+  const workerUrl = new URL("./estimate-worker.js", import.meta.url);
+  const worker = existsSync(workerUrl)
+    ? new Worker(workerUrl, { workerData: options })
+    : new Worker(`import('tsx/esm/api').then(({register}) => { register(); return import(${JSON.stringify(new URL("./estimate-worker.ts", import.meta.url).href)}); });`, { eval: true, workerData: options });
   const done = new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error: Error | null, report?: any) => {
@@ -460,7 +487,7 @@ function estimateInWorker(options): { worker: Worker; done: Promise<any> } {
     };
     worker.once("message", ({ report, error }) => finish(error ? new Error(error) : null, report));
     worker.once("error", (error) => finish(error instanceof Error ? error : new Error(String(error))));
-    worker.once("exit", (code) => { if (code !== 0) finish(new Error(`Estimator worker exited with code ${code}`)); });
+    worker.once("exit", (code) => finish(new Error(`Estimator worker exited without a report (code ${code})`)));
   });
   return { worker, done };
 }
@@ -475,21 +502,18 @@ async function runSession(term: Terminal, options, view: TuiView) {
 
   const paint = () => {
     if (closed) return;
-    term.writeFrame(renderFrame(state, term.columns));
+    term.writeFrame(renderFrame(state, term.columns, term.rows));
   };
 
   const scheduleTick = () => {
     if (timer) clearTimeout(timer);
     timer = null;
-    if (closed || (state.phase !== "loading" && state.phase !== "leaving")) return;
-    const delay = state.phase === "loading" ? 80 : 320;
+    if (closed || state.phase !== "loading") return;
     timer = setTimeout(() => {
-      state = state.phase === "loading"
-        ? tickLoading(state, Date.now() - loadingStarted)
-        : tickThankYou(state);
+      state = tickLoading(state, Date.now() - loadingStarted);
       paint();
       scheduleTick();
-    }, delay);
+    }, 80);
   };
 
   const load = (gen: number) => {

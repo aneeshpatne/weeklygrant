@@ -4,6 +4,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
+- Show early weekly estimates with their confidence instead of withholding valid values; retain measured charts when a dollar estimate is unavailable.
+- Preserve token counters across quota-only heartbeats, handle non-object records, and avoid mistaking aggregate token totals for individual long-context requests.
+- Exclude intervals containing unpriced usage, select the most recently observed quota stream, and prevent unknown model variants or refreshed snapshots from silently changing bundled pricing.
+- Make `--days` filter event timestamps while retaining earlier counter baselines; tolerate unreadable files and preserve cost totals when quota data is absent.
+- Reduce scan allocations, share cost indexes between window fits, stop idle exit-screen timers, and simplify the shipped README.
+- Fix sub-day dashboard ranges, null-valued and flat charts, development-mode workers, retry controls, immediate Ctrl-C exit, and piped-input handling.
+
 ## 1.2.5
 
 - Estimate dashboard and text output now compare the current weekly value with the peak and average of comparable prior weeks in the scanned window.

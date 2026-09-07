@@ -23,7 +23,7 @@ Commands:
 Options:
   --json          Print the complete report as JSON
   --home <path>   Use a specific Codex home (default: CODEX_HOME or ~/.codex)
-  --days <n>      Only scan session files modified in the last n days
+  --days <n>      Include usage and quota observations from the last n days
   --all           Scan all available history for an estimate
   --refresh-prices  Look up unknown model prices on models.dev
   --redact        Hide local filesystem paths in output
@@ -77,7 +77,7 @@ async function main() {
     printHelp();
     return;
   }
-  if (process.stdout.isTTY && !parsed.json) {
+  if (process.stdout.isTTY && process.stdin.isTTY && !parsed.json) {
     const { runTui } = await import("./tui.js");
     await runTui(estimateOptions, command === "usage" ? "usage" : "estimate");
     return;
@@ -104,7 +104,7 @@ async function main() {
   }
   if (report.fiveHour?.present) {
     const share = report.fiveHour.maxSpendPercentOfWeekly == null ? "unknown share" : `${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% of weekly`;
-    console.log(`5-hour maximum: ${money(report.fiveHour.headlineUsd)} · ${share} · ${report.fiveHour.confidence} confidence`);
+    console.log(`5-hour estimate: ${money(report.fiveHour.headlineUsd)} · ${share} · ${report.fiveHour.confidence} confidence`);
   }
   console.log(`Measurements: ${report.validPairs} valid pairs, ${report.pricedEvents} priced events, ${report.pendingEvents} pending events`);
   if (!report.filesScanned) console.log(parsed.redact ? "No Codex JSONL sessions found" : `No Codex JSONL sessions found under ${report.codexHome}`);

@@ -106,6 +106,7 @@ function number(value, fallback = 0) {
 }
 
 export function timestampMs(value) {
+  if (value == null || typeof value === "boolean" || (typeof value === "string" && !value.trim())) return null;
   if (typeof value === "string" && !/^\d+(\.\d+)?$/.test(value.trim())) {
     const parsed = Date.parse(value);
     return Number.isFinite(parsed) ? parsed : null;
@@ -122,7 +123,7 @@ export function normalizeModel(model) {
 function modelFamily(model) {
   const normalized = normalizeModel(model);
   if (OFFICIAL_CARDS[normalized]) return normalized;
-  return OFFICIAL_FAMILIES.find((name) => normalized === name || normalized.startsWith(`${name}-`)) || null;
+  return OFFICIAL_FAMILIES.find((name) => normalized.startsWith(`${name}-`) && /^\d{4}-\d{2}-\d{2}$/.test(normalized.slice(name.length + 1))) || null;
 }
 
 function pickCard(model, cards) {
@@ -292,7 +293,7 @@ function shouldParseLine(head: string) {
 function prefixOf(parts: Buffer[]) {
   if (!parts.length) return "";
   if (parts.length === 1) return parts[0].toString("latin1", 0, Math.min(TYPE_PEEK_BYTES, parts[0].length));
-  return Buffer.concat(parts).toString("latin1", 0, TYPE_PEEK_BYTES);
+  return Buffer.concat(parts, TYPE_PEEK_BYTES).toString("latin1");
 }
 
 function decodeParts(parts: Buffer[]) {
@@ -327,6 +328,11 @@ function* readCandidateLines(file: string) {
         }
         const nl = chunk.indexOf(10, offset);
         if (nl < 0) {
+          if (mode === "peek" && !parts.length && n - offset >= TYPE_PEEK_BYTES
+            && !shouldParseLine(chunk.toString("latin1", offset, offset + TYPE_PEEK_BYTES))) {
+            mode = "skip";
+            break;
+          }
           const slice = Buffer.from(chunk.subarray(offset));
           parts.push(slice);
           peekBytes += slice.length;
@@ -385,6 +391,7 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
     if (!line.trim()) continue;
     let object;
     try { object = JSON.parse(line); } catch { malformedLines += 1; continue; }
+    if (!object || typeof object !== "object" || Array.isArray(object)) { malformedLines += 1; continue; }
     const payload = object.payload && typeof object.payload === "object" ? object.payload : object;
     const type = object.type === "event_msg" ? payload.type : object.type;
     if (type === "session_meta") {
@@ -396,12 +403,21 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
       const rawTier = String(payload.service_tier ?? payload.serviceTier ?? object.service_tier ?? "").toLowerCase();
       if (rawTier === "priority" || rawTier === "fast") serviceTier = "fast";
       else if (rawTier === "default" || rawTier === "standard") serviceTier = "standard";
+      else if (["service_tier", "serviceTier"].some((key) => Object.hasOwn(payload, key) || Object.hasOwn(object, key))) serviceTier = "standard";
       continue;
     }
     if (type !== "token_count") continue;
     const at = timestampMs(object.timestamp ?? payload.timestamp) ?? fileMtime;
+    const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
+    const quota = quotaObservations(rateLimits, at, sessionId);
+    if (quota.weekly) observations.push(quota.weekly);
+    if (quota.fiveHour) fiveHourObservations.push(quota.fiveHour);
+    const observation = quota.weekly ?? quota.fiveHour;
+    if (observation) lastLimitId = observation.limitId;
     const info = payload.info ?? object.info ?? {};
-    const usage = info.total_token_usage ?? info.totalTokenUsage ?? payload.total_token_usage ?? {};
+    const usage = info.total_token_usage ?? info.totalTokenUsage ?? payload.total_token_usage;
+    // Quota heartbeats have no counters. They must not reset the previous total.
+    if (!usage || typeof usage !== "object") continue;
     const lastUsage = info.last_token_usage ?? info.lastTokenUsage ?? payload.last_token_usage ?? null;
     const input = number(usage.input_tokens ?? usage.inputTokens);
     const cached = number(usage.cached_input_tokens ?? usage.cachedInputTokens);
@@ -437,14 +453,6 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
       } else delta = current;
     }
     previous = current;
-    const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
-    const quota = quotaObservations(rateLimits, at, sessionId);
-    if (quota.weekly) observations.push(quota.weekly);
-    if (quota.fiveHour) fiveHourObservations.push(quota.fiveHour);
-    const observation = quota.weekly ?? quota.fiveHour;
-    if (observation) {
-      lastLimitId = observation.limitId;
-    }
     if (delta.uncachedInput + delta.cachedInput + delta.billedOutput > 0) {
       const requestInput = number(lastUsage?.input_tokens ?? lastUsage?.inputTokens, NaN);
       events.push({
@@ -454,7 +462,7 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
         serviceTier,
         sessionId,
         quotaLimitId: observation?.limitId ?? lastLimitId,
-        requestInputTokens: Number.isFinite(requestInput) ? requestInput : delta.uncachedInput + delta.cachedInput,
+        requestInputTokens: Number.isFinite(requestInput) ? requestInput : null,
         counterReset,
       });
     }
@@ -468,7 +476,8 @@ function walkJsonl(root, cutoff, output: JsonlFile[] = [], diagnostics: ScanDiag
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch (error) {
     if (error && (error as NodeJS.ErrnoException).code === "ENOENT") return output;
-    throw error;
+    diagnostics.unreadableFiles += 1;
+    return output;
   }
   for (const entry of entries) {
     const target = path.join(root, entry.name);
@@ -485,7 +494,7 @@ function walkJsonl(root, cutoff, output: JsonlFile[] = [], diagnostics: ScanDiag
 export function collapseObservations(observations) {
   const grouped = new Map();
   for (const item of observations) {
-    if (!Number.isFinite(item.usedPercent) || item.usedPercent < 0 || item.usedPercent > 100) continue;
+    if (!Number.isFinite(item.timestampMs) || !Number.isFinite(item.usedPercent) || item.usedPercent < 0 || item.usedPercent > 100) continue;
     const key = `${item.accountKey}:${item.limitId}:${Math.floor(item.timestampMs / 1000)}`;
     const existing = grouped.get(key);
     if (!existing || item.timestampMs > existing.timestampMs || (item.timestampMs === existing.timestampMs && item.usedPercent > existing.usedPercent)) grouped.set(key, item);
@@ -592,7 +601,7 @@ export function summarizeGrantHistory(epochFits, currentHeadlineUsd: number | nu
 export function hasGraphableSeries(series, minPoints = 2) {
   if (!Array.isArray(series) || series.length < minPoints) return false;
   return ["valueUsd", "usedPercent", "observedCostUsd"].some(
-    (field) => series.filter((point) => Number.isFinite(Number(point[field]))).length >= minPoints,
+    (field) => series.filter((point) => point[field] != null && Number.isFinite(Number(point[field]))).length >= minPoints,
   );
 }
 
@@ -649,10 +658,11 @@ export function costInWindow(lanes: CostLanes, start: number, end: number, limit
   return lanes.includeUnassigned ? assigned + costAt(lanes.unassigned, end) - costAt(lanes.unassigned, start) : assigned;
 }
 
-export function estimateGrantFromLogs(events, observations) {
+export function estimateGrantFromLogs(events, observations, lanes = buildCostLanes(events)) {
   const collapsed = collapseObservations(observations);
   const epochs = splitEpochs(collapsed);
-  const lanes = buildCostLanes(events);
+  const pendingLanes = buildCostLanes(events.filter((event) => !event.eligible).map((event) => ({ ...event, eligible: true, costUsd: 1 })));
+  pendingLanes.includeUnassigned = lanes.includeUnassigned;
   const series: any[] = [];
   const epochFits: any[] = [];
   let active: any = null;
@@ -673,9 +683,10 @@ export function estimateGrantFromLogs(events, observations) {
       const currentCost = costInWindow(lanes, first.timestampMs, current.timestampMs, first.limitId);
       const costDelta = currentCost - anchorCost;
       const percentDelta = current.usedPercent - anchor.usedPercent;
+      const pending = costInWindow(pendingLanes, anchor.timestampMs, current.timestampMs, first.limitId);
       let decision = "pending";
       let weekUsd: number | null = null;
-      if (![costDelta, percentDelta].every(Number.isFinite) || percentDelta < -0.01) decision = "rejected";
+      if (pending > 0 || ![costDelta, percentDelta].every(Number.isFinite) || percentDelta < -0.01) decision = "rejected";
       else if (costDelta > 0 && percentDelta >= MIN_PERCENT_DELTA) {
         weekUsd = costDelta / (percentDelta / 100);
         if (!Number.isFinite(weekUsd) || weekUsd <= 0 || weekUsd < MIN_WEEK_USD) decision = "rejected";
@@ -713,8 +724,8 @@ export function estimateGrantFromLogs(events, observations) {
         const fitted = pooledWeekUsd(matchedCost, matchedPercent) ?? point.weekUsd;
         previous = { timestampMs: point.current.timestampMs, epoch: epochIndex, kind: "quote", valueUsd: fitted, rawUsd: point.weekUsd, usedPercent: point.current.usedPercent, observedCostUsd: point.currentCost, resetsAtMs: point.current.resetsAtMs };
         series.push(previous);
-      } else if (previous) {
-        previous = { ...previous, timestampMs: point.current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: point.current.usedPercent, observedCostUsd: point.currentCost, resetsAtMs: point.current.resetsAtMs };
+      } else {
+        previous = { valueUsd: null, rawUsd: null, ...previous, timestampMs: point.current.timestampMs, epoch: epochIndex, kind: "heartbeat", usedPercent: point.current.usedPercent, observedCostUsd: point.currentCost, resetsAtMs: point.current.resetsAtMs };
         series.push(previous);
       }
     }
@@ -728,7 +739,7 @@ export function estimateGrantFromLogs(events, observations) {
       startMs: first.timestampMs,
       endMs: epoch.at(-1).timestampMs,
     });
-    active = {
+    if (!active || epoch.at(-1).timestampMs >= active.epoch.at(-1).timestampMs) active = {
       epoch, rawUsd, validPairs: inlierRates.length, inlierRates,
       headlineUsd,
       coveragePoints,
@@ -738,6 +749,7 @@ export function estimateGrantFromLogs(events, observations) {
     };
   });
   const latest = active?.epoch.at(-1) ?? null;
+  series.sort((a, b) => a.timestampMs - b.timestampMs);
   const confidence = classifyConfidence(active?.validPairs ?? 0, active?.matchedCoveragePoints ?? 0, active?.inlierRates ?? []);
   return {
     algorithm: WEEKLY_GRANT_VERSION,
@@ -749,7 +761,7 @@ export function estimateGrantFromLogs(events, observations) {
     coveragePoints: active?.coveragePoints ?? 0,
     matchedCoveragePoints: active?.matchedCoveragePoints ?? 0,
     weeklyUsedPercent: latest?.usedPercent ?? null,
-    observedTokenCostUsd: active?.observedTokenCostUsd ?? 0,
+    observedTokenCostUsd: active?.observedTokenCostUsd ?? events.reduce((sum, event) => sum + (event.eligible ? number(event.costUsd) : 0), 0),
     validPairs: active?.validPairs ?? 0,
     outlierPairs: active?.outlierPairs ?? 0,
     pricedEvents,
@@ -768,7 +780,7 @@ function parseModelsDev(data: any): Record<string, RateCard> {
     const cost = value?.cost;
     const input = number(cost?.input, NaN);
     const output = number(cost?.output, NaN);
-    if (!Number.isFinite(input) || !Number.isFinite(output)) continue;
+    if (!Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0) continue;
     const next = card(input, output, number(cost?.cache_read ?? cost?.cacheRead, input));
     next.source = "models_dev";
     cards[normalizeModel(id)] = next;
@@ -785,25 +797,35 @@ export async function loadRateCards(fetchImpl: typeof globalThis.fetch | null = 
     const response = await fetchImpl("https://models.dev/api.json", { signal: controller.signal });
     if (!response.ok) return official;
     const refreshed = parseModelsDev(await response.json());
-    for (const [id, value] of Object.entries(refreshed)) if (!official[id]) official[id] = value;
+    for (const [id, value] of Object.entries(refreshed)) if (!modelFamily(id)) official[id] = value;
     return official;
   } catch { return official; }
   finally { clearTimeout(timeout); }
 }
 
 export async function estimateCodexGrant(options: EstimateOptions = {}) {
+  if (options.days != null && options.days !== Infinity && (!Number.isFinite(options.days) || options.days < 0)) throw new Error("days must be a non-negative number");
   const home = path.resolve(options.home || String(process.env.CODEX_HOME || "").split(",")[0] || path.join(os.homedir(), ".codex"));
   const cardsPromise = loadRateCards(options.refreshPrices ? options.fetch ?? globalThis.fetch : null);
   const cutoff = Number.isFinite(options.days) ? Date.now() - Number(options.days) * 86_400_000 : -Infinity;
   const diagnostics: ScanDiagnostics = { malformedLines: 0, unreadableFiles: 0 };
   const files = [...walkJsonl(path.join(home, "sessions"), cutoff, [], diagnostics), ...walkJsonl(path.join(home, "archived_sessions"), cutoff, [], diagnostics)];
-  const parsed = files.map((entry) => parseLogFile(entry.file, entry.mtimeMs, entry.size));
-  diagnostics.malformedLines = parsed.reduce((total, item) => total + item.malformedLines, 0);
   const cards = await cardsPromise;
-  const events = parsed.flatMap((item) => item.events).map((event) => priceTokens(event, cards));
-  const report = estimateGrantFromLogs(events, parsed.flatMap((item) => item.observations));
-  const fiveHourObservations = parsed.flatMap((item) => item.fiveHourObservations);
-  const fiveHourEstimate = fiveHourObservations.length ? estimateGrantFromLogs(events, fiveHourObservations) : null;
+  const events: any[] = [];
+  const observations: any[] = [];
+  const fiveHourObservations: any[] = [];
+  for (const entry of files) {
+    let parsed;
+    try { parsed = parseLogFile(entry.file, entry.mtimeMs, entry.size); }
+    catch { diagnostics.unreadableFiles += 1; continue; }
+    diagnostics.malformedLines += parsed.malformedLines;
+    for (const event of parsed.events) if (event.timestampMs >= cutoff) events.push(priceTokens(event, cards));
+    for (const item of parsed.observations) if (item.timestampMs >= cutoff) observations.push(item);
+    for (const item of parsed.fiveHourObservations) if (item.timestampMs >= cutoff) fiveHourObservations.push(item);
+  }
+  const lanes = buildCostLanes(events);
+  const report = estimateGrantFromLogs(events, observations, lanes);
+  const fiveHourEstimate = fiveHourObservations.length ? estimateGrantFromLogs(events, fiveHourObservations, lanes) : null;
   const fiveHour = fiveHourEstimate ? {
     present: true,
     windowMinutes: FIVE_HOUR_MINUTES,

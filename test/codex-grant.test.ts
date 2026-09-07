@@ -18,6 +18,7 @@ import {
   priceTokens,
   splitEpochs,
   summarizeModelUsage,
+  timestampMs,
   weightedMedian,
 } from "../src/lib/codex-grant.js";
 
@@ -28,6 +29,131 @@ function observation(timestampMs, usedPercent, resetsAtMs = 100_000) {
 function pricedEvent(timestampMs, costUsd) {
   return { timestampMs, costUsd, eligible: true, quotaLimitId: "codex" };
 }
+
+function withLog(lines, run) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-regression-"));
+  fs.mkdirSync(path.join(root, "sessions"));
+  const file = path.join(root, "sessions", "session.jsonl");
+  fs.writeFileSync(file, lines.map((line) => JSON.stringify(line)).join("\n"));
+  return Promise.resolve().then(() => run(file, root)).finally(() => fs.rmSync(root, { recursive: true, force: true }));
+}
+
+const counter = (timestamp, input, extra = {}) => ({
+  type: "token_count", timestamp,
+  payload: { info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: 0 } }, ...extra },
+});
+
+test("quota-only heartbeats preserve counters and do not duplicate usage", async () => {
+  await withLog([
+    counter(1000, 100),
+    { type: "token_count", timestamp: 1001, payload: { info: null, rate_limits: { secondary: { window_minutes: 10080, used_percent: 5 } } } },
+    counter(1002, 125),
+  ], (file) => {
+    const parsed = parseLogFile(file);
+    assert.deepEqual(parsed.events.map((event) => event.uncachedInput), [100, 25]);
+    assert.equal(parsed.observations.length, 1);
+    assert.equal(parsed.observations[0].resetsAtMs, null);
+  });
+});
+
+test("non-object JSON records are diagnosed without aborting a scan", async () => {
+  await withLog([null, [], 42, counter(1000, 100)], (file) => {
+    const parsed = parseLogFile(file);
+    assert.equal(parsed.malformedLines, 3);
+    assert.equal(parsed.events.length, 1);
+  });
+});
+
+test("missing timestamps do not turn into the Unix epoch", () => {
+  for (const value of [null, undefined, "", "  ", false, true]) assert.equal(timestampMs(value), null);
+  assert.equal(timestampMs(0), 0);
+  assert.equal(timestampMs("1000"), 1_000_000);
+});
+
+test("aggregate counters are not mistaken for a long-context request", async () => {
+  await withLog([
+    { type: "turn_context", payload: { model: "gpt-5.2-codex" } },
+    counter(1000, 500_000),
+  ], (file) => {
+    const event = parseLogFile(file).events[0];
+    assert.equal(event.requestInputTokens, null);
+    assert.equal(priceTokens(event).eligible, true);
+    assert.equal(priceTokens(event).costUsd, 0.875);
+  });
+});
+
+test("clearing Fast mode does not keep its multiplier on later usage", async () => {
+  await withLog([
+    { type: "turn_context", payload: { model: "gpt-5.6-sol", service_tier: "fast" } },
+    counter(1000, 100),
+    { type: "turn_context", payload: { model: "gpt-5.6-sol", service_tier: null } },
+    counter(1001, 200),
+  ], (file) => assert.deepEqual(parseLogFile(file).events.map((event) => event.serviceTier), ["fast", "standard"]));
+});
+
+test("unknown model variants never silently inherit a cheaper parent card", () => {
+  const event = { uncachedInput: 1_000_000, cachedInput: 0, billedOutput: 0 };
+  assert.equal(priceTokens({ ...event, model: "gpt-5-unknown" }).eligible, false);
+  assert.equal(priceTokens({ ...event, model: "gpt-5-2025-08-07" }).costUsd, 1.25);
+});
+
+test("refresh cannot replace official pricing for dated model snapshots", async () => {
+  const cards = await loadRateCards(async () => ({ ok: true, json: async () => ({ openai: { models: {
+    "gpt-5-2025-08-07": { cost: { input: 999, output: 999 } },
+    "invalid": { cost: { input: -1, output: 2 } },
+  } } }) }) as Response);
+  assert.equal(priceTokens({ model: "gpt-5-2025-08-07", uncachedInput: 1_000_000 }, cards).costUsd, 1.25);
+  assert.equal(cards.invalid, undefined);
+});
+
+test("latest observation selects the active stream, not its epoch start", () => {
+  const other = (time, used) => ({ ...observation(time, used), limitId: "other" });
+  const result = estimateGrantFromLogs([
+    pricedEvent(3500, 1),
+    { ...pricedEvent(2500, 10), quotaLimitId: "other" },
+  ], [observation(1000, 0), other(2000, 0), other(3000, 10), observation(4000, 1)]);
+  assert.equal(result.weeklyUsedPercent, 1);
+  assert.equal(result.headlineUsd, 100);
+  assert.deepEqual(result.series.map((point) => point.timestampMs), [3000, 4000]);
+});
+
+test("unpriced usage excludes an incomplete interval from the fit", () => {
+  const result = estimateGrantFromLogs([
+    pricedEvent(1500, 0.5),
+    { ...pricedEvent(1600, 0), eligible: false },
+    pricedEvent(2500, 1),
+  ], [observation(1000, 0), observation(2000, 1), observation(3000, 2)]);
+  assert.equal(result.validPairs, 1);
+  assert.equal(result.headlineUsd, 100);
+  assert.equal(result.matchedCoveragePoints, 1);
+});
+
+test("quota and cost remain graphable when no dollar estimate exists", () => {
+  const result = estimateGrantFromLogs([], [observation(1000, 0), observation(2000, 1), observation(3000, 2)]);
+  assert.equal(result.headlineUsd, null);
+  assert.equal(hasGraphableSeries(result.series), true);
+  assert.ok(result.series.every((point) => point.valueUsd === null));
+  assert.equal(hasGraphableSeries([{ valueUsd: null }, { valueUsd: null }]), false);
+});
+
+test("usage without quota observations still reports its observed cost", () => {
+  assert.equal(estimateGrantFromLogs([pricedEvent(1000, 12)], []).observedTokenCostUsd, 12);
+});
+
+test("days filters events, while older counters still establish the baseline", async () => {
+  const now = Date.now();
+  await withLog([
+    { type: "turn_context", payload: { model: "gpt-5.2-codex" } },
+    counter(now - 2 * 86400000, 100),
+    counter(now - 1000, 125),
+  ], async (_file, root) => {
+    const report = await estimateCodexGrant({ home: root, days: 1, includeModelUsage: true });
+    assert.equal(report.pricedEvents, 1);
+    assert.equal(report.modelUsage[0].totalTokens, 25);
+    const empty = await estimateCodexGrant({ home: root, days: 0 });
+    assert.equal(empty.pricedEvents, 0);
+  });
+});
 
 test("prices 420k gpt-5.2-codex input tokens at $0.735", () => {
   const result = priceTokens({
@@ -214,8 +340,10 @@ test("a new epoch does not graph a stale estimate as a heartbeat", () => {
     ],
   );
   assert.equal(result.headlineUsd, null);
-  assert.equal(result.series.length, 1);
+  assert.equal(result.series.length, 2);
   assert.equal(result.series[0].epoch, 0);
+  assert.equal(result.series[1].epoch, 1);
+  assert.equal(result.series[1].valueUsd, null);
 });
 
 test("offline rate-card loading uses bundled official prices", async () => {

@@ -2,6 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { lineChart, RESET_MARK } from "../src/lib/chart.js";
 
+test("missing values are not plotted as zero dollars", () => {
+  assert.deepEqual(lineChart([{ valueUsd: null }, { valueUsd: undefined }], "valueUsd", 20, 5, "$"), ["No measurements in this range"]);
+});
+
+test("flat chart axes agree at the minimum, middle, and maximum", () => {
+  const chart = lineChart([{ valueUsd: 42 }, { valueUsd: 42 }], "valueUsd", 20, 5, "$");
+  for (const index of [0, 2, 4]) assert.match(chart[index], /\$42\.00/);
+});
+
 test("lineChart reports an empty range", () => {
   assert.deepEqual(lineChart([], "valueUsd", 20, 9, "$"), ["No measurements in this range"]);
 });
