@@ -2,7 +2,7 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.2.6
 
 - Show early weekly estimates with their confidence instead of withholding valid values; retain measured charts when a dollar estimate is unavailable.
 - Preserve token counters across quota-only heartbeats, handle non-object records, and avoid mistaking aggregate token totals for individual long-context requests.
