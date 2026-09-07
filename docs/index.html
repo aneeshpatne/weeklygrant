@@ -6,9 +6,20 @@
   <meta name="description" content="weeklygrant turns local Codex session history into a transparent API-equivalent weekly grant estimate.">
   <meta name="theme-color" content="#ffffff">
   <title>weeklygrant — see the value in your week</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
   <style>
+    @font-face {
+      font-family: "Geist Sans";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("https://cdn.jsdelivr.net/npm/geist@1.7.2/dist/fonts/geist-sans/Geist-Regular.woff2") format("woff2");
+    }
+
     :root {
-      --canvas: #fff;
+      --canvas: #ffffff;
       --wash: #f8f9fc;
       --ink: #010110;
       --ink-ui: #111117;
@@ -18,297 +29,1210 @@
       --ghost: #737373;
       --well: #eeeff8;
       --well-deep: #e4e4f2;
-      --lavender: #c9b6f2;
-      --violet: #7b6cff;
-      --pink: #f2a8d4;
-      --hairline: rgba(1, 1, 16, .1);
-      --gutter: clamp(22px, 7vw, 100px);
+      --stage-a: #c9b6f2;
+      --stage-b: #7b6cff;
+      --stage-c: #f2a8d4;
+      --hairline: rgba(1, 1, 16, 0.10);
+      --pill-stroke: #010110;
       --measure: 1200px;
+      --gutter: clamp(24px, 6.5vw, 100px);
       --radius: 8px;
       --pill: 100px;
+      --section: 96px;
+      --font-display: "Geist Sans", "Helvetica Neue", Arial, sans-serif;
+      --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
-    body { margin: 0; background: var(--canvas); color: var(--ink); font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 20px;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
     a { color: inherit; }
     button, a { -webkit-tap-highlight-color: transparent; }
-    .display { font-family: "Arial Narrow", "Helvetica Neue", Arial, sans-serif; font-weight: 400; letter-spacing: -.055em; }
-    .wrap { width: min(var(--measure), calc(100% - 40px)); margin-inline: auto; }
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    img, svg { display: block; max-width: 100%; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+    .wrap {
+      width: min(var(--measure), calc(100% - 48px));
+      margin-inline: auto;
+    }
 
-    /* Navigation */
-    .nav { min-height: 73px; border-bottom: 1px solid var(--hairline); display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px; padding: 0 28px; color: var(--ink-nav); }
-    .brand { display: inline-flex; align-items: center; gap: 10px; width: max-content; text-decoration: none; }
-    .brand-mark { width: 22px; height: 22px; border: 2px solid var(--ink); border-radius: 50%; position: relative; display: inline-block; }
-    .brand-mark::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 10px; height: 10px; background: var(--canvas); border-left: 2px solid var(--ink); transform: rotate(45deg); }
-    .brand-name { font: 400 20px/1 "Arial Narrow", "Helvetica Neue", Arial, sans-serif; letter-spacing: -.04em; }
-    .parent-line { color: var(--muted); font-size: 12px; margin-left: 3px; }
-    .nav-links { display: flex; align-items: center; gap: 24px; }
-    .nav-links a, .nav-actions a { font-weight: 500; font-size: 14px; text-decoration: none; }
-    .nav-links a::after { content: "⌄"; color: var(--muted); margin-left: 6px; font-size: 13px; }
-    .nav-actions { display: flex; justify-content: flex-end; align-items: center; gap: 20px; }
-    .nav-actions .ghost { color: var(--muted); }
-    .pill { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 10px 20px; border-radius: var(--pill); text-decoration: none; font-size: 14px; font-weight: 500; white-space: nowrap; }
-    .pill.primary { color: #fff; background: var(--ink-ui); }
-    .pill.secondary { border: 1px solid var(--ink); background: var(--canvas); }
-    .pill:hover, .text-link:hover { opacity: .72; }
+    .display {
+      font-family: var(--font-display);
+      font-weight: 400;
+      letter-spacing: -0.03em;
+    }
+    .trail { color: var(--muted); }
+
+    /* Nav */
+    .nav {
+      height: 73px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 24px;
+      padding: 0 28px;
+      background: var(--canvas);
+      color: var(--ink-nav);
+      border-bottom: 1px solid var(--hairline);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      width: max-content;
+    }
+    .brand-mark {
+      width: 22px;
+      height: 22px;
+      border: 2px solid var(--ink);
+      border-radius: 50%;
+      position: relative;
+      flex: 0 0 auto;
+    }
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      right: -3px;
+      bottom: -3px;
+      width: 10px;
+      height: 10px;
+      background: var(--canvas);
+      border-left: 2px solid var(--ink);
+      transform: rotate(45deg);
+    }
+    .brand-name {
+      font-family: var(--font-display);
+      font-size: 20px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+    .parent-line {
+      margin-left: 2px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 28px;
+    }
+    .nav-links a,
+    .nav-actions a {
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+      text-decoration: none;
+    }
+    .nav-actions {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-actions .ghost {
+      padding: 10px 16px;
+      border-radius: var(--pill);
+    }
+    .nav-actions .ghost:hover,
+    .nav-links a:hover,
+    .text-link:hover,
+    .pill:hover,
+    .footer-col a:hover {
+      opacity: 0.72;
+    }
+
+    /* Pills */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 36px;
+      padding: 0 20px;
+      border-radius: var(--pill);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 14px;
+      white-space: nowrap;
+    }
+    .pill.primary {
+      background: var(--ink-ui);
+      color: #fff;
+      border: 0;
+    }
+    .pill.secondary {
+      background: var(--canvas);
+      color: var(--ink);
+      border: 1px solid var(--pill-stroke);
+    }
+    .text-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 14px;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .text-link .arrow { font-size: 16px; line-height: 1; }
 
     /* Hero */
-    .hero { min-height: 665px; display: grid; grid-template-columns: 1fr 1fr; }
-    .hero-copy { display: flex; flex-direction: column; justify-content: center; padding: 70px var(--gutter) 80px; }
-    .kicker { color: var(--muted); font-size: 13px; letter-spacing: .02em; margin-bottom: 22px; }
-    h1 { max-width: 600px; margin: 0; font-size: clamp(48px, 5vw, 72px); line-height: .99; }
-    h1 .trail, h2 .trail { color: var(--muted); }
-    .hero-lede { max-width: 570px; margin: 28px 0 30px; font-size: clamp(17px, 2vw, 20px); line-height: 1.5; }
-    .cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-    .text-link { display: inline-flex; gap: 8px; align-items: center; padding: 10px 4px; font-weight: 500; text-decoration: none; }
-    .text-link span { font-size: 18px; line-height: 1; }
-    .stage { min-height: 665px; overflow: hidden; position: relative; isolation: isolate; background: radial-gradient(circle at 18% 25%, rgba(255, 255, 255, .38), transparent 27%), radial-gradient(circle at 80% 70%, rgba(242, 168, 212, .62), transparent 34%), linear-gradient(135deg, var(--lavender), var(--violet) 54%, var(--pink)); }
-    .stage::before { content: ""; position: absolute; inset: 0; opacity: .18; background-image: radial-gradient(rgba(255,255,255,.7) .7px, transparent .7px); background-size: 5px 5px; mix-blend-mode: overlay; }
-    .stage-label { position: absolute; top: 32px; left: 34px; color: rgba(1,1,16,.62); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
-    .product-frame { position: absolute; top: 16%; left: 8%; width: 76%; min-height: 370px; padding: 12px; border-radius: 13px; background: rgba(255,255,255,.7); box-shadow: 0 24px 60px rgba(46, 24, 110, .24); transform: rotate(-3deg); }
-    .window { overflow: hidden; height: 100%; min-height: 346px; border-radius: 8px; background: #fff; }
-    .window-bar { height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--hairline); background: #fbfbfd; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: #d7d7df; }
-    .window-title { margin-left: 8px; color: var(--muted); font-size: 10px; }
-    .dash { display: grid; grid-template-columns: 88px 1fr; min-height: 310px; }
-    .dash-side { padding: 16px 10px; border-right: 1px solid var(--hairline); background: #fafafe; }
-    .side-line { height: 7px; margin-bottom: 13px; border-radius: 4px; background: #dfe0eb; }
-    .side-line.active { width: 70%; background: var(--violet); }
-    .dash-main { padding: 20px; }
-    .dash-top { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
-    .dash-caption { color: var(--muted); font-size: 10px; }
-    .dash-value { margin-top: 3px; font: 400 40px/1 "Arial Narrow", Arial, sans-serif; letter-spacing: -.05em; }
-    .confidence { border-radius: var(--pill); padding: 5px 9px; color: #375b36; background: #d8f3d8; font-size: 10px; }
-    .quota { margin-top: 22px; padding: 13px; border-radius: 6px; background: var(--well); }
-    .quota-row { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
-    .bar { height: 7px; margin-top: 9px; border-radius: 10px; background: #d7d7e8; }
-    .bar::after { content: ""; display: block; width: 23%; height: 100%; border-radius: inherit; background: var(--violet); }
-    .chart { width: 100%; height: 105px; margin-top: 16px; }
-    .chart path { fill: none; stroke: var(--violet); stroke-width: 2; vector-effect: non-scaling-stroke; }
-    .chart line { stroke: rgba(1,1,16,.1); stroke-dasharray: 1 5; }
-    .mini-terminal { position: absolute; right: 2%; bottom: 10%; width: 45%; padding: 16px; border-radius: 10px; background: #111117; color: #d7e8da; box-shadow: 0 20px 42px rgba(19, 7, 47, .32); transform: rotate(4deg); font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .mini-terminal .muted { color: #85858f; }
-    .mini-terminal .green { color: #9bea9c; }
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 680px;
+    }
+    .hero-copy {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px var(--gutter) 88px;
+    }
+    .hero-copy h1 {
+      margin: 0;
+      max-width: 580px;
+      font-size: clamp(42px, 4.2vw, 58px);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+    .hero-lede {
+      max-width: 520px;
+      margin: 24px 0 28px;
+      font-size: 20px;
+      line-height: 30px;
+      color: var(--ink);
+    }
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
 
-    /* Shared section primitives */
-    section { padding: 100px 0; }
-    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 35px; }
-    h2 { max-width: 800px; margin: 0; font-size: clamp(36px, 4vw, 52px); line-height: 1.03; }
-    .section-copy { max-width: 440px; color: var(--muted); font-size: 16px; }
+    .stage {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: 680px;
+      background:
+        radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.42), transparent 28%),
+        radial-gradient(circle at 82% 78%, rgba(242, 168, 212, 0.55), transparent 36%),
+        linear-gradient(135deg, var(--stage-a), var(--stage-b) 52%, var(--stage-c));
+    }
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: 0.22;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.75) 0.7px, transparent 0.7px);
+      background-size: 4px 4px;
+      mix-blend-mode: overlay;
+      pointer-events: none;
+    }
+    .dash-card {
+      position: absolute;
+      top: 14%;
+      left: 8%;
+      width: min(78%, 460px);
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: 0 28px 60px rgba(46, 24, 110, 0.22);
+      transform: rotate(-2.5deg);
+      animation: float-a 7s ease-in-out infinite;
+    }
+    .window {
+      overflow: hidden;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .window-bar {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--hairline);
+      background: #fbfbfd;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #d7d7df;
+    }
+    .window-title {
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .dash {
+      display: grid;
+      grid-template-columns: 84px 1fr;
+      min-height: 300px;
+    }
+    .dash-side {
+      padding: 16px 10px;
+      border-right: 1px solid var(--hairline);
+      background: #fafafe;
+    }
+    .side-line {
+      height: 7px;
+      margin-bottom: 12px;
+      border-radius: 4px;
+      background: #dfe0eb;
+    }
+    .side-line.active {
+      width: 72%;
+      background: var(--stage-b);
+    }
+    .dash-main { padding: 18px 18px 16px; }
+    .dash-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .dash-caption {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .dash-value {
+      margin-top: 4px;
+      font-family: var(--font-display);
+      font-size: 40px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--ink-ui);
+    }
+    .confidence {
+      border-radius: var(--pill);
+      padding: 5px 10px;
+      color: #2f5a35;
+      background: #d8f3d8;
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .quota {
+      margin-top: 18px;
+      padding: 12px;
+      border-radius: 8px;
+      background: var(--well);
+    }
+    .quota-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .quota-row b { color: var(--ink-ui); font-weight: 500; }
+    .bar {
+      height: 7px;
+      margin-top: 9px;
+      border-radius: 10px;
+      background: #d7d7e8;
+    }
+    .bar::after {
+      content: "";
+      display: block;
+      width: 23%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--stage-b);
+    }
+    .chart {
+      width: 100%;
+      height: 96px;
+      margin-top: 14px;
+    }
+    .chart path {
+      fill: none;
+      stroke: var(--stage-b);
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+    }
+    .chart line {
+      stroke: rgba(1, 1, 16, 0.1);
+      stroke-dasharray: 1 5;
+    }
+    .phone-card {
+      position: absolute;
+      right: 5%;
+      bottom: 9%;
+      width: min(46%, 250px);
+      padding: 14px 14px 12px;
+      border-radius: 10px;
+      background: var(--ink-ui);
+      color: #d7e8da;
+      box-shadow: 0 22px 48px rgba(19, 7, 47, 0.34);
+      transform: rotate(3.5deg);
+      font: 11px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      animation: float-b 8s ease-in-out infinite;
+    }
+    .phone-card .muted { color: #85858f; }
+    .phone-card .green { color: #9bea9c; }
+    @keyframes float-a {
+      0%, 100% { transform: rotate(-2.5deg) translateY(0); }
+      50% { transform: rotate(-2.5deg) translateY(-6px); }
+    }
+    @keyframes float-b {
+      0%, 100% { transform: rotate(3.5deg) translateY(0); }
+      50% { transform: rotate(3.5deg) translateY(-5px); }
+    }
+
+    /* Logo ticker */
+    .ticker {
+      height: 55px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      border-block: 1px solid transparent;
+      background:
+        linear-gradient(var(--canvas), var(--canvas)) padding-box,
+        radial-gradient(var(--hairline) 0.7px, transparent 0.7px) 0 0 / 5px 5px border-box;
+    }
+    .ticker-track {
+      display: flex;
+      gap: 48px;
+      min-width: max-content;
+      color: var(--muted);
+      font-family: var(--font-display);
+      font-size: 18px;
+      letter-spacing: -0.03em;
+      animation: drift 32s linear infinite;
+    }
+    .ticker-track b {
+      color: var(--ink);
+      font-weight: 400;
+    }
+    @keyframes drift {
+      to { transform: translateX(-50%); }
+    }
+
+    /* Sections */
+    section { padding: var(--section) 0; }
+    .section-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 28px;
+      margin-bottom: 32px;
+    }
+    h2 {
+      margin: 0;
+      max-width: 760px;
+      font-size: clamp(32px, 3.4vw, 42px);
+      line-height: 1.14;
+      letter-spacing: -0.03em;
+    }
+    .section-copy {
+      max-width: 360px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 20px;
+    }
     .section-copy p { margin: 0; }
-    .ticker { display: flex; gap: 8px; overflow: hidden; height: 55px; align-items: center; border-block: 1px dotted var(--hairline); white-space: nowrap; }
-    .ticker-track { display: flex; min-width: max-content; gap: 45px; color: var(--muted); font: 400 20px "Arial Narrow", Arial, sans-serif; animation: drift 28s linear infinite; }
-    .ticker-track b { color: var(--ink); font-weight: 400; }
-    @keyframes drift { to { transform: translateX(-50%); } }
-    .dotted-band { height: 11px; background-image: radial-gradient(var(--hairline) .75px, transparent .75px); background-size: 5px 5px; mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-    .well { min-height: 250px; padding: 28px; border-radius: var(--radius); background: var(--well); display: flex; flex-direction: column; justify-content: space-between; }
-    .well.dark { color: #fff; background: var(--ink-ui); }
+
+    /* Bento */
+    .bento {
+      display: grid;
+      gap: 16px;
+    }
+    .bento-row {
+      display: grid;
+      gap: 16px;
+    }
+    .bento-row.asymmetric-a { grid-template-columns: 1.55fr 1fr; }
+    .bento-row.asymmetric-b { grid-template-columns: 1fr 1.55fr; }
+    .bento-row.equal { grid-template-columns: repeat(3, 1fr); }
+    .well {
+      min-height: 250px;
+      padding: 28px;
+      border-radius: var(--radius);
+      background: var(--well);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 28px;
+    }
     .well.deep { background: var(--well-deep); }
-    .well h3 { margin: 0 0 8px; font: 400 23px/1.2 "Arial Narrow", Arial, sans-serif; letter-spacing: -.035em; }
-    .well p { max-width: 430px; margin: 0; color: var(--body-soft); font-weight: 300; }
-    .well.dark p { color: #b8b8c4; }
-    .bento { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; }
-    .bento .wide { min-height: 310px; }
-    .bento .wide .mock-wide { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
-    .metric-strip { display: flex; gap: 8px; align-items: baseline; }
-    .metric-strip strong { font: 400 54px/1 "Arial Narrow", Arial, sans-serif; letter-spacing: -.05em; }
-    .metric-strip span { color: var(--muted); font-size: 12px; }
-    .code-block { padding: 15px; border-radius: 6px; background: rgba(255,255,255,.66); color: var(--body-soft); font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .code-block em { color: var(--violet); font-style: normal; }
-    .bento .dark { grid-column: 1 / -1; min-height: 210px; flex-direction: row; align-items: end; gap: 30px; }
-    .dark-copy { flex: 1; }
-    .dark-art { flex: 1; display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; align-items: end; min-height: 110px; }
-    .dark-art i { display: block; height: var(--h); border-radius: 3px 3px 0 0; background: linear-gradient(var(--pink), var(--violet)); opacity: .85; }
-    .bento .small-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .small-row .well { min-height: 210px; }
-    .well-icon { display: flex; align-items: end; gap: 5px; min-height: 57px; }
-    .well-icon i { display: block; width: 13px; height: var(--h); border-radius: 3px 3px 0 0; background: var(--violet); }
+    .well h3 {
+      margin: 0 0 8px;
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 400;
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .well p {
+      margin: 0;
+      max-width: 420px;
+      color: var(--body-soft);
+      font-size: 14px;
+      font-weight: 300;
+      line-height: 20px;
+    }
+    .nested {
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.72);
+      padding: 16px;
+    }
+    .metric-strip {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .metric-strip strong {
+      font-family: var(--font-display);
+      font-size: 48px;
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -0.03em;
+      color: var(--ink-ui);
+    }
+    .metric-strip span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .code-block {
+      color: var(--body-soft);
+      font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .code-block em {
+      color: var(--stage-b);
+      font-style: normal;
+    }
+    .mini-chart {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 6px;
+      align-items: end;
+      min-height: 88px;
+    }
+    .mini-chart i {
+      display: block;
+      height: var(--h);
+      border-radius: 3px 3px 0 0;
+      background: linear-gradient(180deg, var(--stage-c), var(--stage-b));
+      opacity: 0.88;
+    }
+    .well-icon {
+      display: flex;
+      align-items: end;
+      gap: 5px;
+      min-height: 48px;
+    }
+    .well-icon i {
+      display: block;
+      width: 12px;
+      height: var(--h);
+      border-radius: 3px 3px 0 0;
+      background: var(--stage-b);
+    }
 
-    /* Stats and snapshots */
-    .stats-section { padding: 0 0 100px; }
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); padding: 31px 0; border-block: 1px dotted var(--hairline); background: var(--wash); }
-    .stat { padding: 0 28px; border-right: 1px solid var(--hairline); }
-    .stat:first-child { padding-left: 35px; }
-    .stat:last-child { border: 0; }
-    .stat-value { display: block; font: 400 46px/1 "Arial Narrow", Arial, sans-serif; letter-spacing: -.05em; }
-    .stat-label { display: block; margin-top: 8px; color: var(--body-soft); }
-    .snapshots-head { margin-bottom: 30px; }
-    .snapshots-head .text-link { color: var(--ink); }
-    .case-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-    .case-tile { overflow: hidden; min-height: 385px; border-radius: var(--radius); background: var(--well); }
-    .case-color { min-height: 130px; padding: 20px; background: var(--case); }
-    .case-color strong { display: block; font: 400 22px/1.1 "Arial Narrow", Arial, sans-serif; letter-spacing: -.035em; }
-    .case-color span { display: block; max-width: 190px; margin-top: 12px; color: rgba(1,1,16,.68); font-size: 12px; }
-    .case-product { min-height: 255px; padding: 18px; background: #fff; }
-    .case-window { overflow: hidden; height: 214px; border-radius: 6px; background: #f5f5fa; }
-    .case-window .line { height: 8px; margin: 17px 14px 0; border-radius: 4px; background: #ddddea; }
+    /* Stats */
+    .stats-section { padding: 0 0 var(--section); }
+    .dotted-band {
+      height: 12px;
+      background-image: radial-gradient(var(--hairline) 0.75px, transparent 0.75px);
+      background-size: 4px 4px;
+      mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      padding: 36px 0;
+      background: var(--wash);
+    }
+    .stat {
+      padding: 0 28px;
+      border-right: 1px solid var(--hairline);
+    }
+    .stat:first-child { padding-left: 0; }
+    .stat:last-child { border-right: 0; padding-right: 0; }
+    .stat-value {
+      display: block;
+      font-family: var(--font-display);
+      font-size: clamp(36px, 3.6vw, 52px);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: var(--ink-ui);
+    }
+    .stat-label {
+      display: block;
+      margin-top: 8px;
+      color: var(--ink-ui);
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    /* Case tiles */
+    .case-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .case-tile {
+      overflow: hidden;
+      min-height: 420px;
+      border-radius: var(--radius);
+      background: var(--well);
+      display: flex;
+      flex-direction: column;
+    }
+    .case-color {
+      min-height: 140px;
+      padding: 22px;
+      background: var(--case);
+    }
+    .case-color strong {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 400;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+    .case-color span {
+      display: block;
+      max-width: 200px;
+      margin-top: 12px;
+      color: rgba(1, 1, 16, 0.68);
+      font-size: 13px;
+      line-height: 18px;
+    }
+    .case-product {
+      flex: 1;
+      padding: 16px;
+      background: #fff;
+    }
+    .case-window {
+      height: 100%;
+      min-height: 230px;
+      border-radius: 8px;
+      background: #f5f5fa;
+      padding: 16px 14px;
+    }
+    .case-window .line {
+      height: 8px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      background: #ddddea;
+    }
     .case-window .line.short { width: 52%; }
-    .case-window .line.violet { width: 76%; background: var(--violet); }
-    .case-window .grid-lines { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; align-items: end; height: 105px; margin: 17px 14px; }
-    .case-window .grid-lines i { height: var(--h); border-radius: 3px 3px 0 0; background: #cfc9f4; }
+    .case-window .line.accent {
+      width: 74%;
+      background: var(--stage-b);
+    }
+    .case-window .bars {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 5px;
+      align-items: end;
+      height: 120px;
+      margin-top: 18px;
+    }
+    .case-window .bars i {
+      height: var(--h);
+      border-radius: 3px 3px 0 0;
+      background: #cfc9f4;
+    }
 
-    /* Trust and close */
-    .trust { padding-top: 25px; }
-    .feature-split { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
-    .isometric { min-height: 455px; display: grid; place-items: center; border-radius: var(--radius); background: var(--well); }
-    .isometric svg { width: 78%; max-width: 430px; height: auto; }
-    .iso-line { fill: none; stroke: var(--ink-ui); stroke-width: 1.25; opacity: .83; }
-    .iso-fill { fill: var(--violet); opacity: .75; }
-    .iso-fill.light { fill: var(--pink); }
-    .principles h2 { margin-bottom: 27px; }
-    .accordion { border-top: 1px solid var(--hairline); }
-    .accordion details { border-bottom: 1px solid var(--hairline); }
-    .accordion summary { cursor: pointer; list-style: none; padding: 18px 0; font: 400 25px/1.2 "Arial Narrow", Arial, sans-serif; letter-spacing: -.03em; }
+    /* Trust / accordion */
+    .feature-split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+    }
+    .isometric {
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+      border-radius: var(--radius);
+      background: var(--well);
+      padding: 28px;
+    }
+    .isometric svg {
+      width: 78%;
+      max-width: 420px;
+      height: auto;
+    }
+    .iso-line {
+      fill: none;
+      stroke: var(--ink-ui);
+      stroke-width: 1.25;
+      opacity: 0.82;
+    }
+    .iso-fill { fill: var(--stage-b); opacity: 0.78; }
+    .iso-fill.light { fill: var(--stage-c); }
+    .principles h2 { margin-bottom: 28px; }
+    .accordion details { margin: 0; }
+    .accordion summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 14px 0;
+      font-family: var(--font-display);
+      font-size: 26px;
+      font-weight: 400;
+      line-height: 32px;
+      letter-spacing: -0.01em;
+      color: var(--muted);
+      transition: color 250ms linear;
+    }
     .accordion summary::-webkit-details-marker { display: none; }
-    .accordion summary::after { content: "+"; float: right; color: var(--muted); font: 300 22px/1 Arial, sans-serif; }
     .accordion details[open] summary { color: var(--ink-ui); }
-    .accordion details[open] summary::after { content: "−"; }
-    .accordion p { max-width: 470px; margin: -5px 0 20px; color: var(--ghost); }
-    .close-band { padding: 90px 20px; text-align: center; border-block: 1px dotted var(--hairline); background: var(--wash); }
-    .close-band h2 { max-width: 780px; margin: 0 auto; font-size: clamp(44px, 6vw, 72px); }
-    .close-band p { max-width: 550px; margin: 22px auto 27px; color: var(--body-soft); font-size: 17px; }
+    .accordion p {
+      max-width: 460px;
+      margin: 0 0 18px;
+      color: var(--ghost);
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    /* Close */
+    .close-band {
+      padding: 88px 20px;
+      text-align: center;
+      background: var(--wash);
+    }
+    .close-band h2 {
+      max-width: 760px;
+      margin: 0 auto;
+      font-size: clamp(40px, 5vw, 58px);
+      line-height: 1.1;
+    }
+    .close-band p {
+      max-width: 540px;
+      margin: 22px auto 28px;
+      color: var(--ink);
+      font-size: 20px;
+      line-height: 30px;
+    }
     .close-band .cta-row { justify-content: center; }
 
     /* Footer */
-    footer { padding: 63px 0 74px; }
-    .footer-grid { display: grid; grid-template-columns: 1.4fr repeat(4, 1fr); gap: 30px; }
-    .footer-brand .brand { margin-bottom: 17px; }
-    .slogan { max-width: 230px; color: var(--muted); font: 400 20px/1.35 "Arial Narrow", Arial, sans-serif; letter-spacing: -.035em; }
-    .footer-col h3 { margin: 0 0 14px; font-size: 14px; font-weight: 500; }
-    .footer-col a { display: block; width: max-content; margin: 8px 0; color: var(--muted); text-decoration: none; }
-    .footer-col a:hover { color: var(--ink); }
-    .copyright { margin-top: 58px; color: var(--muted); font-size: 12px; }
+    footer { padding: 64px 0 72px; }
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.35fr repeat(4, 1fr);
+      gap: 32px;
+    }
+    .footer-brand .brand {
+      margin-bottom: 16px;
+      transform: scale(1.15);
+      transform-origin: left center;
+    }
+    .slogan {
+      max-width: 240px;
+      color: var(--muted);
+      font-family: var(--font-display);
+      font-size: 20px;
+      line-height: 28px;
+      letter-spacing: -0.03em;
+    }
+    .footer-col h3 {
+      margin: 0 0 14px;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+      color: var(--ink);
+    }
+    .footer-col a {
+      display: block;
+      width: max-content;
+      margin: 8px 0;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      line-height: 20px;
+    }
+    .copyright {
+      margin-top: 56px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 18px;
+    }
 
-    @media (max-width: 920px) {
+    @media (max-width: 980px) {
       .nav { grid-template-columns: 1fr auto; padding-inline: 20px; }
       .nav-links { display: none; }
       .hero { grid-template-columns: 1fr; }
-      .hero-copy { min-height: 530px; padding-inline: max(22px, 7vw); }
+      .hero-copy {
+        min-height: auto;
+        padding: 64px var(--gutter) 56px;
+      }
       .stage { min-height: 560px; }
-      .product-frame { left: 7%; width: 82%; }
-      .stats { grid-template-columns: repeat(2, 1fr); gap: 25px 0; }
-      .stat:nth-child(2) { border: 0; }
-      .stat:nth-child(-n+2) { padding-bottom: 20px; }
-      .case-grid { grid-template-columns: repeat(2, 1fr); }
+      .dash-card { left: 7%; width: 78%; }
+      .phone-card { width: 48%; }
+      .bento-row.asymmetric-a,
+      .bento-row.asymmetric-b,
+      .bento-row.equal { grid-template-columns: 1fr 1fr; }
+      .stats { grid-template-columns: 1fr 1fr; row-gap: 28px; }
+      .stat:nth-child(2) { border-right: 0; padding-right: 0; }
+      .stat:nth-child(3) { padding-left: 0; }
+      .case-grid { grid-template-columns: 1fr 1fr; }
+      .feature-split { grid-template-columns: 1fr; gap: 36px; }
       .footer-grid { grid-template-columns: repeat(3, 1fr); }
       .footer-brand { grid-column: 1 / -1; }
     }
-    @media (max-width: 650px) {
-      section { padding: 70px 0; }
-      .wrap { width: min(100% - 28px, var(--measure)); }
-      .nav { min-height: 64px; }
+
+    @media (max-width: 640px) {
+      :root { --section: 72px; }
+      .wrap { width: min(100% - 32px, var(--measure)); }
+      .nav { height: 64px; }
       .parent-line { display: none; }
-      .nav-actions { gap: 10px; }
       .nav-actions .ghost { display: none; }
-      .hero-copy { min-height: 480px; padding-top: 60px; padding-bottom: 60px; }
-      .stage { min-height: 455px; }
-      .stage-label { top: 22px; left: 20px; }
-      .product-frame { top: 17%; left: 4%; width: 91%; min-height: 280px; padding: 8px; }
-      .window, .dash { min-height: 260px; }
-      .dash { grid-template-columns: 54px 1fr; }
+      .hero-copy { padding: 56px 24px 48px; }
+      .hero-lede { font-size: 17px; line-height: 26px; }
+      .stage {
+        min-height: 0;
+        height: 420px;
+      }
+      .dash-card {
+        top: 7%;
+        left: 5%;
+        width: 82%;
+        padding: 8px;
+        transform: rotate(-1.25deg);
+        animation: none;
+      }
+      .dash {
+        grid-template-columns: 48px 1fr;
+        min-height: 0;
+      }
       .dash-side { padding: 12px 7px; }
-      .dash-main { padding: 14px; }
-      .dash-value { font-size: 32px; }
-      .chart { height: 70px; }
-      .mini-terminal { right: 2%; bottom: 7%; width: 57%; padding: 11px; font-size: 9px; }
-      .section-head, .feature-split { display: block; }
-      .section-copy { margin-top: 18px; }
-      .bento, .bento .small-row { grid-template-columns: 1fr; }
-      .bento .dark { grid-column: auto; flex-direction: column; align-items: stretch; }
-      .bento .small-row { grid-column: auto; }
-      .stats-section { padding-bottom: 70px; }
-      .stats { grid-template-columns: 1fr 1fr; }
-      .stat, .stat:first-child { padding-inline: 15px; }
-      .stat-value { font-size: 38px; }
-      .case-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
-      .case-tile { min-height: 320px; }
-      .case-color { min-height: 115px; padding: 15px; }
-      .case-color strong { font-size: 18px; }
-      .case-product { padding: 10px; }
-      .case-window { height: 175px; }
-      .case-window .grid-lines { height: 75px; }
-      .isometric { min-height: 300px; margin-bottom: 45px; }
-      .footer-grid { grid-template-columns: 1fr 1fr; gap: 30px 20px; }
-      .footer-brand { grid-column: 1 / -1; }
+      .dash-main { padding: 12px 12px 10px; }
+      .dash-value { font-size: 28px; }
+      .confidence { font-size: 10px; padding: 4px 8px; }
+      .quota { margin-top: 12px; padding: 10px; }
+      .chart { height: 64px; margin-top: 10px; }
+      .phone-card {
+        right: 4%;
+        bottom: 4%;
+        width: 60%;
+        padding: 11px 12px;
+        font-size: 10px;
+        line-height: 1.55;
+        transform: rotate(2.5deg);
+        animation: none;
+      }
+      .section-head { display: block; }
+      .section-copy { margin-top: 14px; max-width: none; }
+      .bento-row.asymmetric-a,
+      .bento-row.asymmetric-b,
+      .bento-row.equal { grid-template-columns: 1fr; }
+      .well { min-height: 0; }
+      .stats { padding-inline: 8px; }
+      .stat, .stat:first-child, .stat:last-child { padding-inline: 12px; }
+      .stat-value { font-size: 36px; }
+      .case-grid {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        gap: 12px;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .case-tile {
+        flex: 0 0 78%;
+        min-height: 380px;
+        scroll-snap-align: start;
+      }
+      .accordion summary { font-size: 22px; line-height: 28px; }
+      .close-band p { font-size: 17px; line-height: 26px; }
+      .footer-grid { grid-template-columns: 1fr 1fr; gap: 28px 18px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .ticker-track, .dash-card, .phone-card { animation: none; }
+      html { scroll-behavior: auto; }
     }
   </style>
 </head>
 <body>
   <nav class="nav" aria-label="Main navigation">
     <a class="brand" href="./" aria-label="weeklygrant home">
-      <span class="brand-mark" aria-hidden="true"></span><span class="brand-name">weeklygrant</span><span class="parent-line">a local signal</span>
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">weeklygrant</span>
+      <span class="parent-line">a local signal</span>
     </a>
     <div class="nav-links" aria-label="Sections">
-      <a href="#capabilities">Capabilities</a><a href="#snapshots">Snapshots</a><a href="#trust">Principles</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#snapshots">Snapshots</a>
+      <a href="#trust">Principles</a>
     </div>
-    <div class="nav-actions"><a class="ghost" href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Docs</a><a class="pill secondary" href="https://github.com/aneeshpatne/weeklygrant">GitHub</a></div>
+    <div class="nav-actions">
+      <a class="ghost" href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Docs</a>
+      <a class="pill secondary" href="https://github.com/aneeshpatne/weeklygrant">GitHub</a>
+    </div>
   </nav>
 
   <main>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <div class="kicker">Local Codex history / weekly planning</div>
-        <h1 id="hero-title" class="display">The value of your grant, <span class="trail">made visible.</span></h1>
-        <p class="hero-lede">weeklygrant turns session logs into a clear API-equivalent estimate. Follow quota movement, token cost, and confidence in one quiet place.</p>
-        <div class="cta-row"><a class="pill primary" href="https://www.npmjs.com/package/weeklygrant">Install weeklygrant</a><a class="pill secondary" href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Read the docs</a></div>
+        <h1 id="hero-title" class="display">The value of your grant,<br><span class="trail">made visible.</span></h1>
+        <p class="hero-lede">weeklygrant turns local Codex session logs into a clear API-equivalent estimate. Quota movement, token cost, and confidence — one quiet read.</p>
+        <div class="cta-row">
+          <a class="pill primary" href="https://www.npmjs.com/package/weeklygrant">Install weeklygrant</a>
+          <a class="pill secondary" href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Read the docs</a>
+        </div>
       </div>
       <div class="stage" aria-label="weeklygrant dashboard preview">
-        <div class="stage-label">One week / observed signal</div>
-        <div class="product-frame">
+        <div class="dash-card">
           <div class="window">
-            <div class="window-bar"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span class="window-title">weeklygrant / estimate</span></div>
+            <div class="window-bar">
+              <i class="dot"></i><i class="dot"></i><i class="dot"></i>
+              <span class="window-title">weeklygrant / estimate</span>
+            </div>
             <div class="dash">
-              <aside class="dash-side" aria-hidden="true"><div class="side-line active"></div><div class="side-line"></div><div class="side-line"></div><div class="side-line"></div><div class="side-line"></div></aside>
+              <aside class="dash-side" aria-hidden="true">
+                <div class="side-line active"></div>
+                <div class="side-line"></div>
+                <div class="side-line"></div>
+                <div class="side-line"></div>
+                <div class="side-line"></div>
+              </aside>
               <div class="dash-main">
-                <div class="dash-top"><div><div class="dash-caption">Estimated weekly API value</div><div class="dash-value">$63.05</div></div><span class="confidence">medium confidence</span></div>
-                <div class="quota"><div class="quota-row"><span>Weekly quota</span><b>5.0% used</b></div><div class="bar"></div></div>
-                <svg class="chart" viewBox="0 0 400 105" role="img" aria-label="Measured grant value rising across the week"><line x1="0" y1="20" x2="400" y2="20"></line><line x1="0" y1="53" x2="400" y2="53"></line><line x1="0" y1="86" x2="400" y2="86"></line><path d="M0 90 C40 89 53 77 80 78 S125 58 150 62 S190 67 218 46 S270 47 300 30 S347 38 400 12"></path></svg>
+                <div class="dash-top">
+                  <div>
+                    <div class="dash-caption">Estimated weekly API value</div>
+                    <div class="dash-value">$63.05</div>
+                  </div>
+                  <span class="confidence">medium confidence</span>
+                </div>
+                <div class="quota">
+                  <div class="quota-row"><span>Weekly quota</span><b>5.0% used</b></div>
+                  <div class="bar"></div>
+                </div>
+                <svg class="chart" viewBox="0 0 400 105" role="img" aria-label="Measured grant value rising across the week">
+                  <line x1="0" y1="20" x2="400" y2="20"></line>
+                  <line x1="0" y1="53" x2="400" y2="53"></line>
+                  <line x1="0" y1="86" x2="400" y2="86"></line>
+                  <path d="M0 90 C40 89 53 77 80 78 S125 58 150 62 S190 67 218 46 S270 47 300 30 S347 38 400 12"></path>
+                </svg>
               </div>
             </div>
           </div>
         </div>
-        <div class="mini-terminal"><span class="muted">$ weeklygrant --json</span><br><span class="green">✓</span> 22,646 priced events<br><span class="muted">→</span> $3.28 observed spend<br><span class="muted">→</span> 2 matched quota points</div>
+        <div class="phone-card" aria-hidden="true">
+          <span class="muted">$ weeklygrant --json</span><br>
+          <span class="green">✓</span> 22,646 priced events<br>
+          <span class="muted">→</span> $3.28 observed spend<br>
+          <span class="muted">→</span> 2 matched quota points
+        </div>
       </div>
     </section>
 
-    <div class="ticker" aria-label="What weeklygrant measures"><div class="ticker-track"><span><b>token cost</b> / quota movement</span><span><b>reset aware</b> / local first</span><span><b>model usage</b> / honest confidence</span><span><b>token cost</b> / quota movement</span><span><b>reset aware</b> / local first</span><span><b>model usage</b> / honest confidence</span></div></div>
+    <div class="ticker" aria-label="What weeklygrant measures">
+      <div class="ticker-track">
+        <span><b>token cost</b> / quota movement</span>
+        <span><b>reset aware</b> / local first</span>
+        <span><b>model usage</b> / honest confidence</span>
+        <span><b>no telemetry</b> / offline pricing</span>
+        <span><b>token cost</b> / quota movement</span>
+        <span><b>reset aware</b> / local first</span>
+        <span><b>model usage</b> / honest confidence</span>
+        <span><b>no telemetry</b> / offline pricing</span>
+      </div>
+    </div>
 
     <section id="capabilities" class="wrap" aria-labelledby="capabilities-title">
-      <div class="section-head"><h2 id="capabilities-title" class="display">A small tool for a <span class="trail">messy signal.</span></h2><div class="section-copy"><p>Your history contains counters, model context, service tiers, and reset windows. weeklygrant keeps the useful parts together and shows what the data can support.</p></div></div>
+      <div class="section-head">
+        <h2 id="capabilities-title" class="display">A small tool for a <span class="trail">messy signal.</span></h2>
+        <div class="section-copy">
+          <p>Counters, model context, service tiers, and reset windows live in your history. weeklygrant keeps the useful parts together and shows what the data can support.</p>
+        </div>
+      </div>
+
       <div class="bento">
-        <article class="well wide"><div><h3>See the estimate form</h3><p>Price the tokens you actually used, then compare them with the quota movement recorded beside them.</p></div><div class="mock-wide"><div class="metric-strip"><strong>$63.05</strong><span>weekly API value</span></div><div class="code-block"><em>confidence</em>  medium<br><em>quota</em>       5.0% used<br><em>reset</em>       in 167h</div></div></article>
-        <article class="well deep"><div><h3>Keep the source close</h3><p>Runs against local JSONL. No account connection, server, telemetry, or default network request.</p></div><div class="code-block"><em>home</em> ~/.codex<br><em>mode</em> bundled-official<br><em>path</em> inspectable</div></article>
-        <article class="well dark"><div class="dark-copy"><h3>Make uncertainty legible</h3><p>Early values stay visible with their confidence. Missing prices are pending, never silently free.</p></div><div class="dark-art" aria-hidden="true"><i style="--h: 31%"></i><i style="--h: 48%"></i><i style="--h: 39%"></i><i style="--h: 74%"></i><i style="--h: 61%"></i><i style="--h: 89%"></i><i style="--h: 68%"></i><i style="--h: 100%"></i></div></article>
-        <div class="small-row"><article class="well"><div><h3>Reset-aware</h3><p>Weekly and five-hour windows split into fresh epochs.</p></div><div class="well-icon" aria-hidden="true"><i style="--h: 24px"></i><i style="--h: 44px"></i><i style="--h: 30px"></i><i style="--h: 52px"></i></div></article><article class="well"><div><h3>Fast enough</h3><p>Stream large histories and reuse indexed cost windows.</p></div><div class="metric-strip"><strong>0.6s</strong><span>warm scan</span></div></article><article class="well"><div><h3>Ready to inspect</h3><p>Charts, diagnostics, model usage, and JSON share the same report.</p></div><div class="code-block"><em>--json</em> <em>--redact</em><br>safe to pass downstream</div></article></div>
+        <div class="bento-row asymmetric-a">
+          <article class="well">
+            <div>
+              <h3>See the estimate form</h3>
+              <p>Price the tokens you actually used, then compare them with the quota movement recorded beside them.</p>
+            </div>
+            <div class="nested">
+              <div class="metric-strip"><strong>$63.05</strong><span>weekly API value</span></div>
+            </div>
+          </article>
+          <article class="well deep">
+            <div>
+              <h3>Keep the source close</h3>
+              <p>Runs against local JSONL. No account connection, server, telemetry, or default network request.</p>
+            </div>
+            <div class="nested code-block">
+              <em>home</em> ~/.codex<br>
+              <em>mode</em> bundled-official<br>
+              <em>path</em> inspectable
+            </div>
+          </article>
+        </div>
+
+        <div class="bento-row asymmetric-b">
+          <article class="well deep">
+            <div>
+              <h3>Make uncertainty legible</h3>
+              <p>Early values stay visible with their confidence. Missing prices are pending, never silently free.</p>
+            </div>
+            <div class="nested code-block">
+              <em>confidence</em> medium<br>
+              <em>quota</em> 5.0% used<br>
+              <em>reset</em> in 167h
+            </div>
+          </article>
+          <article class="well">
+            <div>
+              <h3>Watch the week settle</h3>
+              <p>Matched intervals and fit stability turn a noisy log into a number you can plan around.</p>
+            </div>
+            <div class="mini-chart" aria-hidden="true">
+              <i style="--h: 28%"></i><i style="--h: 44%"></i><i style="--h: 36%"></i><i style="--h: 62%"></i>
+              <i style="--h: 54%"></i><i style="--h: 78%"></i><i style="--h: 68%"></i><i style="--h: 100%"></i>
+            </div>
+          </article>
+        </div>
+
+        <div class="bento-row equal">
+          <article class="well">
+            <div>
+              <h3>Reset-aware</h3>
+              <p>Weekly and five-hour windows split into fresh epochs.</p>
+            </div>
+            <div class="well-icon" aria-hidden="true">
+              <i style="--h: 22px"></i><i style="--h: 40px"></i><i style="--h: 28px"></i><i style="--h: 52px"></i>
+            </div>
+          </article>
+          <article class="well">
+            <div>
+              <h3>Fast enough</h3>
+              <p>Stream large histories and reuse indexed cost windows.</p>
+            </div>
+            <div class="metric-strip"><strong>0.6s</strong><span>warm scan</span></div>
+          </article>
+          <article class="well">
+            <div>
+              <h3>Ready to inspect</h3>
+              <p>Charts, diagnostics, model usage, and JSON share the same report.</p>
+            </div>
+            <div class="nested code-block"><em>--json</em> <em>--redact</em><br>safe to pass downstream</div>
+          </article>
+        </div>
       </div>
     </section>
 
-    <section class="stats-section" aria-labelledby="facts-title"><h2 id="facts-title" class="sr-only">Project facts</h2><div class="stats wrap"><div class="stat"><span class="stat-value">0</span><span class="stat-label">runtime dependencies</span></div><div class="stat"><span class="stat-value">1 MiB</span><span class="stat-label">streaming read chunks</span></div><div class="stat"><span class="stat-value">17</span><span class="stat-label">bundled model cards</span></div><div class="stat"><span class="stat-value">75</span><span class="stat-label">regression tests</span></div></div></section>
+    <section class="stats-section" aria-labelledby="facts-title">
+      <h2 id="facts-title" class="sr-only">Project facts</h2>
+      <div class="dotted-band" aria-hidden="true"></div>
+      <div class="stats wrap">
+        <div class="stat">
+          <span class="stat-value">0</span>
+          <span class="stat-label">runtime dependencies</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">1 MiB</span>
+          <span class="stat-label">streaming read chunks</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">17</span>
+          <span class="stat-label">bundled model cards</span>
+        </div>
+        <div class="stat">
+          <span class="stat-value">75</span>
+          <span class="stat-label">regression tests</span>
+        </div>
+      </div>
+      <div class="dotted-band" aria-hidden="true"></div>
+    </section>
 
     <section id="snapshots" class="wrap" aria-labelledby="snapshots-title">
-      <div class="section-head snapshots-head"><h2 id="snapshots-title" class="display">Four ways to read the <span class="trail">same week.</span></h2><a class="text-link" href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">All details <span aria-hidden="true">→</span></a></div>
+      <div class="section-head">
+        <h2 id="snapshots-title" class="display">Four ways to read the <span class="trail">same week.</span></h2>
+        <a class="text-link" href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">All details <span class="arrow" aria-hidden="true">→</span></a>
+      </div>
       <div class="case-grid">
-        <article class="case-tile"><div class="case-color" style="--case:#c9b6f2"><strong>Grant value</strong><span>What the observed mix would cost at API rates.</span></div><div class="case-product"><div class="case-window"><div class="line violet"></div><div class="line short"></div><div class="grid-lines"><i style="--h:45%"></i><i style="--h:68%"></i><i style="--h:54%"></i><i style="--h:84%"></i><i style="--h:71%"></i><i style="--h:100%"></i></div></div></div></article>
-        <article class="case-tile"><div class="case-color" style="--case:#f2a8d4"><strong>Quota rhythm</strong><span>Where the current week sits inside its window.</span></div><div class="case-product"><div class="case-window"><div class="line short"></div><div class="line violet"></div><div class="grid-lines"><i style="--h:26%"></i><i style="--h:39%"></i><i style="--h:61%"></i><i style="--h:51%"></i><i style="--h:77%"></i><i style="--h:82%"></i></div></div></div></article>
-        <article class="case-tile"><div class="case-color" style="--case:#bce3d0"><strong>Model mix</strong><span>Which models carry the tokens and value.</span></div><div class="case-product"><div class="case-window"><div class="line violet"></div><div class="line short"></div><div class="grid-lines"><i style="--h:85%"></i><i style="--h:47%"></i><i style="--h:63%"></i><i style="--h:31%"></i><i style="--h:54%"></i><i style="--h:25%"></i></div></div></div></article>
-        <article class="case-tile"><div class="case-color" style="--case:#f0d48a"><strong>Reset history</strong><span>Where a fresh epoch changes the story.</span></div><div class="case-product"><div class="case-window"><div class="line short"></div><div class="line violet"></div><div class="grid-lines"><i style="--h:56%"></i><i style="--h:56%"></i><i style="--h:15%"></i><i style="--h:29%"></i><i style="--h:43%"></i><i style="--h:65%"></i></div></div></div></article>
+        <article class="case-tile">
+          <div class="case-color" style="--case:#c9b6f2">
+            <strong>Grant value</strong>
+            <span>What the observed mix would cost at API rates.</span>
+          </div>
+          <div class="case-product">
+            <div class="case-window">
+              <div class="line accent"></div>
+              <div class="line short"></div>
+              <div class="bars">
+                <i style="--h:45%"></i><i style="--h:68%"></i><i style="--h:54%"></i>
+                <i style="--h:84%"></i><i style="--h:71%"></i><i style="--h:100%"></i>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="case-tile">
+          <div class="case-color" style="--case:#f2a8d4">
+            <strong>Quota rhythm</strong>
+            <span>Where the current week sits inside its window.</span>
+          </div>
+          <div class="case-product">
+            <div class="case-window">
+              <div class="line short"></div>
+              <div class="line accent"></div>
+              <div class="bars">
+                <i style="--h:26%"></i><i style="--h:39%"></i><i style="--h:61%"></i>
+                <i style="--h:51%"></i><i style="--h:77%"></i><i style="--h:82%"></i>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="case-tile">
+          <div class="case-color" style="--case:#bce3d0">
+            <strong>Model mix</strong>
+            <span>Which models carry the tokens and value.</span>
+          </div>
+          <div class="case-product">
+            <div class="case-window">
+              <div class="line accent"></div>
+              <div class="line short"></div>
+              <div class="bars">
+                <i style="--h:85%"></i><i style="--h:47%"></i><i style="--h:63%"></i>
+                <i style="--h:31%"></i><i style="--h:54%"></i><i style="--h:25%"></i>
+              </div>
+            </div>
+          </div>
+        </article>
+        <article class="case-tile">
+          <div class="case-color" style="--case:#f0d48a">
+            <strong>Reset history</strong>
+            <span>Where a fresh epoch changes the story.</span>
+          </div>
+          <div class="case-product">
+            <div class="case-window">
+              <div class="line short"></div>
+              <div class="line accent"></div>
+              <div class="bars">
+                <i style="--h:56%"></i><i style="--h:56%"></i><i style="--h:15%"></i>
+                <i style="--h:29%"></i><i style="--h:43%"></i><i style="--h:65%"></i>
+              </div>
+            </div>
+          </div>
+        </article>
       </div>
     </section>
 
-    <section id="trust" class="trust wrap" aria-labelledby="trust-title"><div class="feature-split"><div class="isometric" aria-hidden="true"><svg viewBox="0 0 460 360"><path class="iso-line" d="M70 230 230 132 390 227 230 324Z"></path><path class="iso-line" d="M70 230V112l160-94 160 94v115"></path><path class="iso-line" d="M230 132V18M150 181V64M310 181V64"></path><path class="iso-line" d="m70 112 160 95 160-95M70 171l160 95 160-95"></path><path class="iso-line" d="M70 230 230 324l160-97"></path><path class="iso-fill" d="m230 132 80-47v58l-80 48z"></path><path class="iso-fill light" d="m150 181 80-48v59l-80 47z"></path><path class="iso-line" d="M126 265 230 324l104-62"></path><circle cx="230" cy="207" r="8" fill="var(--ink-ui)"></circle></svg></div><div class="principles"><h2 id="trust-title" class="display">A report you can <span class="trail">reason about.</span></h2><div class="accordion"><details open><summary>Local by default</summary><p>Session logs stay on your machine. The bundled rate cards work offline, and refresh is opt-in for unknown models.</p></details><details><summary>Intervals before headlines</summary><p>Cost is paired to quota movement before it becomes a weekly number. Resets and divergent slices get their own treatment.</p></details><details><summary>Confidence in the open</summary><p>One usable interval can produce an early value, while the report keeps coverage, pending events, and fit stability visible beside it.</p></details></div></div></div></section>
+    <section id="trust" class="wrap" aria-labelledby="trust-title">
+      <div class="feature-split">
+        <div class="isometric" aria-hidden="true">
+          <svg viewBox="0 0 460 360">
+            <path class="iso-line" d="M70 230 230 132 390 227 230 324Z"></path>
+            <path class="iso-line" d="M70 230V112l160-94 160 94v115"></path>
+            <path class="iso-line" d="M230 132V18M150 181V64M310 181V64"></path>
+            <path class="iso-line" d="m70 112 160 95 160-95M70 171l160 95 160-95"></path>
+            <path class="iso-line" d="M70 230 230 324l160-97"></path>
+            <path class="iso-fill" d="m230 132 80-47v58l-80 48z"></path>
+            <path class="iso-fill light" d="m150 181 80-48v59l-80 47z"></path>
+            <path class="iso-line" d="M126 265 230 324l104-62"></path>
+            <circle cx="230" cy="207" r="8" fill="#111117"></circle>
+          </svg>
+        </div>
+        <div class="principles">
+          <h2 id="trust-title" class="display">A report you can <span class="trail">reason about.</span></h2>
+          <div class="accordion">
+            <details open>
+              <summary>Local by default</summary>
+              <p>Session logs stay on your machine. Bundled rate cards work offline, and refresh is opt-in for unknown models.</p>
+            </details>
+            <details>
+              <summary>Intervals before headlines</summary>
+              <p>Cost is paired to quota movement before it becomes a weekly number. Resets and divergent slices get their own treatment.</p>
+            </details>
+            <details>
+              <summary>Confidence in the open</summary>
+              <p>One usable interval can produce an early value, while coverage, pending events, and fit stability stay visible beside it.</p>
+            </details>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <section class="close-band" aria-labelledby="close-title"><h2 id="close-title" class="display">Make the next week <span class="trail">easier to see.</span></h2><p>Install the small local tool that turns a noisy session history into a signal you can inspect.</p><div class="cta-row"><a class="pill primary" href="https://www.npmjs.com/package/weeklygrant">Install weeklygrant</a><a class="pill secondary" href="https://github.com/aneeshpatne/weeklygrant">View source</a></div></section>
+    <div class="dotted-band" aria-hidden="true"></div>
+    <section class="close-band" aria-labelledby="close-title">
+      <h2 id="close-title" class="display">Make the next week <span class="trail">easier to see.</span></h2>
+      <p>Install the small local tool that turns a noisy session history into a signal you can inspect.</p>
+      <div class="cta-row">
+        <a class="pill primary" href="https://www.npmjs.com/package/weeklygrant">Install weeklygrant</a>
+        <a class="pill secondary" href="https://github.com/aneeshpatne/weeklygrant">View source</a>
+      </div>
+    </section>
+    <div class="dotted-band" aria-hidden="true"></div>
   </main>
 
-  <footer class="wrap"><div class="footer-grid"><div class="footer-brand"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">weeklygrant</span></a><div class="slogan">A quiet read on a noisy week.</div></div><div class="footer-col"><h3>Product</h3><a href="#capabilities">Capabilities</a><a href="#snapshots">Snapshots</a><a href="#trust">Principles</a></div><div class="footer-col"><h3>Use it</h3><a href="https://www.npmjs.com/package/weeklygrant">npm package</a><a href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Documentation</a><a href="https://github.com/aneeshpatne/weeklygrant/releases">Releases</a></div><div class="footer-col"><h3>Project</h3><a href="https://github.com/aneeshpatne/weeklygrant">GitHub</a><a href="https://github.com/aneeshpatne/weeklygrant/issues">Issues</a><a href="https://github.com/aneeshpatne/weeklygrant/blob/main/LICENSE">MIT License</a></div><div class="footer-col"><h3>Trust</h3><a href="https://github.com/aneeshpatne/weeklygrant/blob/main/PRIVACY.md">Privacy</a><a href="https://github.com/aneeshpatne/weeklygrant/blob/main/SECURITY.md">Security</a><a href="https://github.com/aneeshpatne/weeklygrant/actions">Actions</a></div></div><div class="copyright">© 2026 weeklygrant. API-equivalent planning value, not a Codex bill or credit balance.</div></footer>
+  <footer class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="./">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">weeklygrant</span>
+        </a>
+        <div class="slogan">A quiet read on a noisy week.</div>
+      </div>
+      <div class="footer-col">
+        <h3>Product</h3>
+        <a href="#capabilities">Capabilities</a>
+        <a href="#snapshots">Snapshots</a>
+        <a href="#trust">Principles</a>
+      </div>
+      <div class="footer-col">
+        <h3>Use it</h3>
+        <a href="https://www.npmjs.com/package/weeklygrant">npm package</a>
+        <a href="https://github.com/aneeshpatne/weeklygrant/blob/main/README.md">Documentation</a>
+        <a href="https://github.com/aneeshpatne/weeklygrant/releases">Releases</a>
+      </div>
+      <div class="footer-col">
+        <h3>Project</h3>
+        <a href="https://github.com/aneeshpatne/weeklygrant">GitHub</a>
+        <a href="https://github.com/aneeshpatne/weeklygrant/issues">Issues</a>
+        <a href="https://github.com/aneeshpatne/weeklygrant/blob/main/LICENSE">MIT License</a>
+      </div>
+      <div class="footer-col">
+        <h3>Trust</h3>
+        <a href="https://github.com/aneeshpatne/weeklygrant/blob/main/PRIVACY.md">Privacy</a>
+        <a href="https://github.com/aneeshpatne/weeklygrant/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/aneeshpatne/weeklygrant/actions">Actions</a>
+      </div>
+    </div>
+    <div class="copyright">© 2026 weeklygrant. API-equivalent planning value, not a Codex bill or credit balance.</div>
+  </footer>
 
   <script>
-    document.querySelectorAll('.accordion details').forEach((item) => item.addEventListener('toggle', () => {
-      if (!item.open) return;
-      document.querySelectorAll('.accordion details').forEach((other) => { if (other !== item) other.open = false; });
-    }));
+    document.querySelectorAll(".accordion details").forEach((item) => {
+      item.addEventListener("toggle", () => {
+        if (!item.open) return;
+        document.querySelectorAll(".accordion details").forEach((other) => {
+          if (other !== item) other.open = false;
+        });
+      });
+    });
   </script>
 </body>
 </html>
