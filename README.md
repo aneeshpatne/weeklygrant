@@ -3,6 +3,7 @@
 Estimate the API-equivalent value of a weekly Codex grant from local session logs.
 
 [![npm version](https://img.shields.io/npm/v/weeklygrant)](https://www.npmjs.com/package/weeklygrant)
+[![total downloads](https://img.shields.io/npm/dt/weeklygrant.svg)](https://www.npmjs.com/package/weeklygrant)
 [![CI](https://img.shields.io/github/actions/workflow/status/aneeshpatne/weeklygrant/ci.yml?branch=main)](https://github.com/aneeshpatne/weeklygrant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/aneeshpatne/weeklygrant)](LICENSE)
 
