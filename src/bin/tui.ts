@@ -87,7 +87,7 @@ export function relativeTime(value) {
 
 export function withheldReason(report) {
   if (report.filesScanned === 0) return "No session logs found; check --home or try --all";
-  if (report.pendingEvents > 0 && report.validPairs === 0) return "Usage has missing prices; inspect weeklygrant usage or try --refresh-prices";
+  if (report.pricedEvents === 0 && report.pendingEvents > 0) return "Usage has missing prices; inspect weeklygrant usage or try --refresh-prices";
   if (report.weeklyUsedPercent == null) return "No weekly quota observations found in the scanned logs";
   const needsPairs = Math.max(0, 2 - report.validPairs);
   const coverage = Number.isFinite(report.matchedCoveragePoints) ? report.matchedCoveragePoints : report.coveragePoints;

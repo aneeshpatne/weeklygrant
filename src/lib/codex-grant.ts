@@ -85,6 +85,7 @@ export const OFFICIAL_CARDS: Record<string, RateCard> = {
   "gpt-5.6": card(4, 20, 0.4, tier(8, 30, 0.8), 2.5),
   "gpt-5.6-sol": card(4, 20, 0.4, tier(8, 30, 0.8), 2.5),
   "gpt-5.6-luna": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04), 2.5),
+  "codex-auto-review": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04), 2.5),
   "gpt-5.6-terra": card(2, 12, 0.2, tier(4, 18, 0.4), 2.5),
   "gpt-6-astra": card(10, 50, 1, tier(20, 75, 2), 2),
 };
@@ -224,8 +225,14 @@ export function buildModelUsageSeries(events, maxPoints = MAX_USAGE_SERIES_POINT
   return series.sort((a, b) => a.timestampMs - b.timestampMs || a.model.localeCompare(b.model));
 }
 
+function isAuxiliaryQuota(rateLimits) {
+  const id = String(rateLimits.limit_id ?? rateLimits.limitId ?? "").toLowerCase();
+  const name = String(rateLimits.limit_name ?? rateLimits.limitName ?? "").toLowerCase();
+  return id === "base_model_inference" || name === "gpt-reserve";
+}
+
 function quotaObservations(rateLimits, timestamp, sessionId) {
-  if (!rateLimits || typeof rateLimits !== "object") return { weekly: null, fiveHour: null };
+  if (!rateLimits || typeof rateLimits !== "object" || isAuxiliaryQuota(rateLimits)) return { weekly: null, fiveHour: null };
   const windows = [rateLimits.primary, rateLimits.secondary].filter(Boolean).map((window) => ({
     window,
     minutes: number(window.window_minutes ?? window.windowMinutes, NaN),
@@ -246,12 +253,15 @@ function quotaObservations(rateLimits, timestamp, sessionId) {
       sessionId,
       windowKind,
       windowMinutes: candidate.minutes,
+      paired: false,
     };
   };
-  return {
-    weekly: pick(WEEKLY_MINUTES, WEEKLY_TOLERANCE, "weekly"),
-    fiveHour: pick(FIVE_HOUR_MINUTES, FIVE_HOUR_TOLERANCE, "five_hour"),
-  };
+  const weekly = pick(WEEKLY_MINUTES, WEEKLY_TOLERANCE, "weekly");
+  const fiveHour = pick(FIVE_HOUR_MINUTES, FIVE_HOUR_TOLERANCE, "five_hour");
+  const paired = Boolean(weekly && fiveHour);
+  if (weekly) weekly.paired = paired;
+  if (fiveHour) fiveHour.paired = paired;
+  return { weekly, fiveHour };
 }
 
 function typeFromPrefix(head: string) {
@@ -412,8 +422,12 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
     const quota = quotaObservations(rateLimits, at, sessionId);
     if (quota.weekly) observations.push(quota.weekly);
     if (quota.fiveHour) fiveHourObservations.push(quota.fiveHour);
-    const observation = quota.weekly ?? quota.fiveHour;
-    if (observation) lastLimitId = observation.limitId;
+    const grantWindow = [quota.weekly, quota.fiveHour].find((item) => item?.paired) ?? null;
+    if (grantWindow) lastLimitId = grantWindow.limitId;
+    else {
+      const observation = quota.weekly ?? quota.fiveHour;
+      if (observation) lastLimitId = observation.limitId;
+    }
     const info = payload.info ?? object.info ?? {};
     const usage = info.total_token_usage ?? info.totalTokenUsage ?? payload.total_token_usage;
     // Quota heartbeats have no counters. They must not reset the previous total.
@@ -461,7 +475,7 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
         model,
         serviceTier,
         sessionId,
-        quotaLimitId: observation?.limitId ?? lastLimitId,
+        quotaLimitId: grantWindow?.limitId ?? lastLimitId,
         requestInputTokens: Number.isFinite(requestInput) ? requestInput : null,
         counterReset,
       });
@@ -658,6 +672,17 @@ export function costInWindow(lanes: CostLanes, start: number, end: number, limit
   return lanes.includeUnassigned ? assigned + costAt(lanes.unassigned, end) - costAt(lanes.unassigned, start) : assigned;
 }
 
+function isPairedEpoch(epoch) {
+  return epoch.some((item) => item.paired);
+}
+
+function isNewerGrantEpoch(epoch, active) {
+  if (!active) return true;
+  const pairedDelta = Number(isPairedEpoch(epoch)) - Number(isPairedEpoch(active.epoch));
+  if (pairedDelta !== 0) return pairedDelta > 0;
+  return epoch.at(-1).timestampMs >= active.epoch.at(-1).timestampMs;
+}
+
 export function estimateGrantFromLogs(events, observations, lanes = buildCostLanes(events)) {
   const collapsed = collapseObservations(observations);
   const epochs = splitEpochs(collapsed);
@@ -739,7 +764,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
       startMs: first.timestampMs,
       endMs: epoch.at(-1).timestampMs,
     });
-    if (!active || epoch.at(-1).timestampMs >= active.epoch.at(-1).timestampMs) active = {
+    const next = {
       epoch, rawUsd, validPairs: inlierRates.length, inlierRates,
       headlineUsd,
       coveragePoints,
@@ -747,6 +772,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
       observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId),
       outlierPairs: candidates.length - inlierRates.length,
     };
+    if (isNewerGrantEpoch(epoch, active)) active = next;
   });
   const latest = active?.epoch.at(-1) ?? null;
   series.sort((a, b) => a.timestampMs - b.timestampMs);

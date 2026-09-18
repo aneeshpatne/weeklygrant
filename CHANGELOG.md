@@ -2,6 +2,12 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Price Codex auto-review (`codex-auto-review`) at official GPT-5.6 Luna rates, including long context and Fast mode.
+- After a weekly reset, do not blame missing prices when token usage already has bundled rates.
+- Ignore `gpt-reserve` / `base_model_inference` windows so they cannot replace the Codex weekly grant with a 0% reading.
+
 ## 1.2.6
 
 - Show early weekly estimates with their confidence instead of withholding valid values; retain measured charts when a dollar estimate is unavailable.

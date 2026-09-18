@@ -12,6 +12,7 @@ import {
   handleKey,
   renderFrame,
   visibleScreen,
+  withheldReason,
 } from "../src/bin/tui.js";
 
 function withConfig(run) {
@@ -137,6 +138,17 @@ test("dashboard and usage keys cycle metric, range, and model", () => {
   assert.equal(handleKey(usage, key("down")).state.modelIndex, 1);
   assert.equal(handleKey(usage, key("-")).state.rangeIndex, 2);
   assert.equal(handleKey(usage, key("+")).state.rangeIndex, 3);
+});
+
+test("missing prices are reported only when no usage could be priced", () => {
+  assert.match(
+    withheldReason(report({ pricedEvents: 0, pendingEvents: 12, validPairs: 0, weeklyUsedPercent: 0 })),
+    /missing prices/,
+  );
+  assert.match(
+    withheldReason(report({ pricedEvents: 100, pendingEvents: 12, validPairs: 0, weeklyUsedPercent: 0, coveragePoints: 0 })),
+    /more valid measurement/,
+  );
 });
 
 test("an early estimate is visible even with only one measurement", () => {

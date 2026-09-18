@@ -117,6 +117,59 @@ test("latest observation selects the active stream, not its epoch start", () => 
   assert.deepEqual(result.series.map((point) => point.timestampMs), [3000, 4000]);
 });
 
+test("a later unpaired inference limit does not replace the paired Codex weekly grant", () => {
+  const grant = (time, used) => ({ ...observation(time, used), limitId: "codex", paired: true });
+  const reserve = (time) => ({ ...observation(time, 0, time + 7 * 86_400_000), limitId: "base_model_inference" });
+  const result = estimateGrantFromLogs(
+    [pricedEvent(1_500, 0.82), pricedEvent(2_500, 0.82)],
+    [grant(1_000, 80), grant(2_000, 81), grant(3_000, 82), reserve(4_000), reserve(5_000)],
+  );
+  assert.equal(result.weeklyUsedPercent, 82);
+  assert.equal(result.headlineUsd, 82);
+  assert.equal(result.validPairs, 2);
+});
+
+test("gpt-reserve rate limits do not move weekly quota or retag grant usage", async () => {
+  await withLog([
+    { type: "turn_context", payload: { model: "gpt-5.6-sol" } },
+    {
+      type: "token_count",
+      timestamp: 1_000,
+      payload: {
+        info: { total_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 0 } },
+        rate_limits: {
+          limit_id: "codex",
+          plan_type: "plus",
+          primary: { window_minutes: 300, used_percent: 40, resets_at: 50_000 },
+          secondary: { window_minutes: 10_080, used_percent: 82, resets_at: 80_000 },
+        },
+      },
+    },
+    {
+      type: "token_count",
+      timestamp: 2_000,
+      payload: {
+        info: { total_token_usage: { input_tokens: 175, cached_input_tokens: 0, output_tokens: 0 } },
+        rate_limits: {
+          limit_id: "base_model_inference",
+          limit_name: "gpt-reserve",
+          plan_type: "plus",
+          primary: { window_minutes: 10_080, used_percent: 0, resets_at: 90_000 },
+          secondary: null,
+        },
+      },
+    },
+  ], (file, root) => estimateCodexGrant({ home: root, days: Infinity }).then((report) => {
+    const parsed = parseLogFile(file);
+    assert.equal(parsed.observations.length, 1);
+    assert.equal(parsed.observations[0].usedPercent, 82);
+    assert.equal(parsed.observations[0].paired, true);
+    assert.deepEqual(parsed.events.map((event) => event.quotaLimitId), ["codex", "codex"]);
+    assert.equal(report.weeklyUsedPercent, 82);
+    assert.equal(report.planType, "plus");
+  }));
+});
+
 test("unpriced usage excludes an incomplete interval from the fit", () => {
   const result = estimateGrantFromLogs([
     pricedEvent(1500, 0.5),
@@ -356,6 +409,18 @@ test("official GPT-5.6 Sol pricing includes long context and Codex Fast mode", (
   const base = { model: "gpt-5.6-sol", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
   assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 38.8);
   assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 61);
+});
+
+test("codex-auto-review uses official GPT-5.6 Luna rates", () => {
+  const luna = { model: "gpt-5.6-luna", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  const autoReview = { ...luna, model: "codex-auto-review" };
+  assert.equal(priceTokens({ ...autoReview, serviceTier: "standard", requestInputTokens: 1 }).costUsd, 1.42);
+  assert.equal(priceTokens({ ...autoReview, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 2.24);
+  assert.equal(priceTokens({ ...autoReview, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 3.55);
+  assert.equal(
+    priceTokens({ ...autoReview, serviceTier: "fast", requestInputTokens: 1 }).costUsd,
+    priceTokens({ ...luna, serviceTier: "fast", requestInputTokens: 1 }).costUsd,
+  );
 });
 
 test("official GPT-6 Astra pricing includes long context and Fast mode", () => {
