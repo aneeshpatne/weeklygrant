@@ -2,7 +2,7 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.2.7
 
 - Price Codex auto-review (`codex-auto-review`) at official GPT-5.6 Luna rates, including long context and Fast mode.
 - After a weekly reset, do not blame missing prices when token usage already has bundled rates.
