@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 import { hasGraphableSeries, isStableEstimate } from "../src/lib/codex-grant.js";
 import { normalizeKey, stripAnsi, visibleWidth } from "../src/bin/term.js";
 import {
-  applyReport,
   applyError,
+  applyReport,
   createState,
   handleKey,
   renderFrame,
@@ -15,22 +12,8 @@ import {
   withheldReason,
 } from "../src/bin/tui.js";
 
-function withConfig(run) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-tui-"));
-  const previous = process.env.WEEKLYGRANT_CONFIG;
-  process.env.WEEKLYGRANT_CONFIG = path.join(dir, "config.json");
-  try { return run(); }
-  finally {
-    if (previous === undefined) delete process.env.WEEKLYGRANT_CONFIG;
-    else process.env.WEEKLYGRANT_CONFIG = previous;
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-function key(input: string, extra: Record<string, unknown> = {}) {
-  if (input === "left" || input === "right" || input === "up" || input === "down" || input === "escape" || input === "return") {
-    return normalizeKey(undefined, { name: input, ...extra });
-  }
+function key(input: string) {
+  if (input === "escape") return normalizeKey(undefined, { name: "escape", sequence: "\x1b" });
   if (input === "ctrl-c") return normalizeKey("\x03", { name: "c", ctrl: true, sequence: "\x03" });
   return normalizeKey(input, { name: input });
 }
@@ -50,36 +33,19 @@ function report(overrides = {}) {
     resetsAtMs: Date.now() + 3_600_000,
     planType: "plus",
     series: [
-      { timestampMs: Date.now() - 86_400_000, valueUsd: 40, usedPercent: 10, observedCostUsd: 4 },
-      { timestampMs: Date.now(), valueUsd: 42, usedPercent: 20, observedCostUsd: 8 },
+      { timestampMs: Date.now() - 86_400_000, valueUsd: 40, epoch: 0 },
+      { timestampMs: Date.now(), valueUsd: 42, epoch: 0 },
     ],
     filesScanned: 3,
-    pricingSources: ["official"],
-    rateCardMode: "bundled-official",
-    modelUsage: [{
-      model: "gpt-5.2-codex",
-      uncachedInputTokens: 1000,
-      cachedInputTokens: 200,
-      outputTokens: 50,
-      totalTokens: 1250,
-      apiValueUsd: 1.25,
-      pricedEvents: 2,
-      pendingEvents: 0,
-    }],
-    modelUsageSeries: [
-      { timestampMs: Date.now() - 1000, model: "gpt-5.2-codex", totalTokens: 500, uncachedInputTokens: 400, cachedInputTokens: 80, outputTokens: 20, apiValueUsd: 0.5 },
-      { timestampMs: Date.now(), model: "gpt-5.2-codex", totalTokens: 1250, uncachedInputTokens: 1000, cachedInputTokens: 200, outputTokens: 50, apiValueUsd: 1.25 },
-    ],
     ...overrides,
   };
 }
 
-test("loading, splash, dashboard, usage, and thank-you screens are selected from state", () => {
-  assert.equal(visibleScreen(createState("estimate")), "loading");
+test("loading, splash, and dashboard screens are selected from state", () => {
+  assert.equal(visibleScreen(createState()), "loading");
   assert.equal(visibleScreen({ ...createState(), phase: "error", error: "boom" }), "error");
-  assert.equal(visibleScreen({ ...createState(), phase: "leaving" }), "thanks");
 
-  const empty = applyReport(createState("estimate"), report({
+  const empty = applyReport(createState(), report({
     confidence: "none",
     validPairs: 0,
     coveragePoints: 0,
@@ -89,55 +55,17 @@ test("loading, splash, dashboard, usage, and thank-you screens are selected from
   assert.equal(isStableEstimate(empty.report.confidence), false);
   assert.equal(hasGraphableSeries(empty.report.series), false);
   assert.equal(visibleScreen(empty), "splash");
-
-  const graphable = applyReport(createState("estimate"), report({ confidence: "low", validPairs: 1, coveragePoints: 2 }));
-  assert.equal(visibleScreen(graphable), "dashboard");
-
-  const ready = applyReport(createState("estimate"), report());
-  assert.equal(visibleScreen(ready), "dashboard");
-
-  const usage = applyReport(createState("usage"), report());
-  assert.equal(visibleScreen(usage), "usage");
+  assert.equal(visibleScreen(applyReport(createState(), report())), "dashboard");
 });
 
-test("quit during loading skips the star nudge; quit from a ready dashboard requests it", () => {
-  withConfig(() => {
-    const loading = handleKey(createState("estimate"), key("q"));
-    assert.deepEqual(loading.actions, ["quit"]);
-    assert.equal(loading.state.phase, "loading");
+test("quit exits immediately and ready screens can rescan", () => {
+  assert.deepEqual(handleKey(createState(), key("q")).actions, ["quit"]);
+  assert.deepEqual(handleKey(applyReport(createState(), report()), key("escape")).actions, ["quit"]);
+  assert.deepEqual(handleKey(applyError(createState(), "failed"), key("ctrl-c")).actions, ["quit"]);
 
-    const ready = applyReport(createState("estimate"), report());
-    const quit = handleKey(ready, key("escape"));
-    assert.equal(quit.state.phase, "leaving");
-    assert.deepEqual(quit.actions, []);
-
-    const star = handleKey(quit.state, key("n"));
-    assert.deepEqual(star.actions, ["hide-nudge", "quit"]);
-    assert.deepEqual(handleKey(quit.state, key("s")).actions, ["open-repo"]);
-    assert.deepEqual(handleKey(quit.state, key("ctrl-c")).actions, ["quit"]);
-  });
-});
-
-test("dashboard and usage keys cycle metric, range, and model", () => {
-  const dash = applyReport(createState("estimate"), report());
-  assert.equal(dash.metricIndex, 0);
-  assert.equal(dash.rangeIndex, 1);
-  assert.equal(handleKey(dash, key("right")).state.metricIndex, 1);
-  assert.equal(handleKey(dash, key("left")).state.metricIndex, 2);
-  assert.equal(handleKey(dash, key("down")).state.rangeIndex, 2);
-  assert.equal(handleKey(dash, key("r")).actions[0], "retry");
-  assert.equal(handleKey(dash, key("r")).state.phase, "loading");
-
-  const usage = applyReport(createState("usage"), report({
-    modelUsage: [
-      { model: "a", uncachedInputTokens: 1, cachedInputTokens: 0, outputTokens: 0, totalTokens: 1, apiValueUsd: 1, pricedEvents: 1, pendingEvents: 0 },
-      { model: "b", uncachedInputTokens: 1, cachedInputTokens: 0, outputTokens: 0, totalTokens: 1, apiValueUsd: 0, pricedEvents: 1, pendingEvents: 0 },
-    ],
-  }));
-  assert.equal(usage.rangeIndex, 3);
-  assert.equal(handleKey(usage, key("down")).state.modelIndex, 1);
-  assert.equal(handleKey(usage, key("-")).state.rangeIndex, 2);
-  assert.equal(handleKey(usage, key("+")).state.rangeIndex, 3);
+  const retried = handleKey(applyReport(createState(), report()), key("r"));
+  assert.deepEqual(retried.actions, ["retry"]);
+  assert.equal(retried.state.phase, "loading");
 });
 
 test("missing prices are reported only when no usage could be priced", () => {
@@ -151,61 +79,19 @@ test("missing prices are reported only when no usage could be priced", () => {
   );
 });
 
-test("an early estimate is visible even with only one measurement", () => {
-  const state = applyReport(createState(), report({ confidence: "low", validPairs: 1, coveragePoints: 1, series: [] }));
-  assert.equal(visibleScreen(state), "dashboard");
-  const frame = stripAnsi(renderFrame(state).join("\n"));
-  assert.match(frame, /\$42\.00/);
-  assert.match(frame, /Early estimate/);
-  assert.doesNotMatch(frame, /withheld/);
-});
-
-test("sub-day and zero-day ranges render and cycle without crashing", () => {
-  for (const scanWindowDays of [0, 0.5]) {
-    let state = applyReport(createState(), report({ scanWindowDays }));
-    assert.doesNotThrow(() => renderFrame(state));
-    state = handleKey(state, key("down")).state;
-    assert.equal(state.rangeIndex, 0);
-    assert.doesNotThrow(() => renderFrame(state));
+test("small terminals show only a resize prompt", () => {
+  const state = applyReport(createState(), report());
+  for (const [columns, rows] of [[40, 24], [80, 20]]) {
+    const lines = renderFrame(state, columns, rows);
+    assert.ok(lines.every((line) => visibleWidth(line) < columns));
+    const frame = stripAnsi(lines.join("\n"));
+    assert.match(frame, /Expand terminal size/);
+    assert.doesNotMatch(frame, /Estimated weekly API/);
   }
 });
 
-test("small terminals retain the headline, chart, and controls within the viewport", () => {
-  for (const view of ["estimate", "usage"] as const) {
-    const state = applyReport(createState(view), report());
-    for (const columns of [40, 80]) {
-      const lines = renderFrame(state, columns, 24);
-      assert.ok(lines.length < 24);
-      assert.ok(lines.every((line) => visibleWidth(line) < columns));
-      assert.match(stripAnsi(lines.join("\n")), view === "estimate" ? /\$42\.00/ : /gpt-5\.2-codex/);
-      assert.match(stripAnsi(lines.join("\n")), /quit/);
-    }
-  }
-});
-
-test("errors and usage screens support rescan and Ctrl-C exits immediately", () => {
-  for (const state of [applyError(createState(), "read failed"), applyReport(createState("usage"), report())]) {
-    assert.deepEqual(handleKey(state, key("r")).actions, ["retry"]);
-    assert.deepEqual(handleKey(state, key("ctrl-c")).actions, ["quit"]);
-  }
-});
-
-test("renderFrame prints the splash, dashboard, and usage copy", () => {
-  const splash = stripAnsi(renderFrame(applyReport(createState("estimate"), report({
-    confidence: "none", validPairs: 0, coveragePoints: 0, series: [], headlineUsd: null,
-  })), 80).join("\n"));
-  assert.match(splash, /Estimate not ready/);
-  assert.match(splash, /weeklygrant/);
-
-  const dash = stripAnsi(renderFrame(applyReport(createState("estimate"), report()), 80).join("\n"));
-  assert.match(dash, /Estimated weekly API/);
-  assert.match(dash, /\$42\.00/);
-  assert.match(dash, /HIGH/);
-  assert.match(dash, /graph/);
-  assert.equal(dash.includes("╰──────────────────────╯ ╰──────────────────────╯"), true);
-  assert.equal(dash.includes("Vs scanned peak"), false);
-
-  const historyDash = stripAnsi(renderFrame(applyReport(createState("estimate"), report({
+test("dashboard keeps one grant graph and historical percentage comparisons", () => {
+  const state = applyReport(createState(), report({
     history: {
       peakUsd: 100,
       averageUsd: 80,
@@ -213,30 +99,31 @@ test("renderFrame prints the splash, dashboard, and usage copy", () => {
       vsPeakPercent: -40,
       vsAveragePercent: -25,
     },
-  })), 80).join("\n"));
-  assert.match(historyDash, /Vs scanned peak/);
-  assert.match(historyDash, /-40%/);
-  assert.match(historyDash, /\$100\.00/);
-  assert.match(historyDash, /Vs scanned average/);
-  assert.match(historyDash, /-25%/);
-  assert.match(historyDash, /\$80\.00/);
+  }));
+  const frame = stripAnsi(renderFrame(state, 120, 40).join("\n"));
+  assert.match(frame, /Estimated weekly API/);
+  assert.match(frame, /Estimated grant history/);
+  assert.match(frame, /Vs scanned peak/);
+  assert.match(frame, /-40%/);
+  assert.match(frame, /Vs scanned average/);
+  assert.match(frame, /-25%/);
+  assert.doesNotMatch(frame, /Weekly quota used/);
+  assert.doesNotMatch(frame, /Observed API-equivalent cost/);
+});
 
-  const resetDash = stripAnsi(renderFrame(applyReport(createState("estimate"), report({
+test("dashboard marks quota resets in the remaining graph", () => {
+  const state = applyReport(createState(), report({
     series: [
-      { timestampMs: Date.now() - 86_400_000, valueUsd: 40, usedPercent: 10, observedCostUsd: 4, epoch: 0, resetsAtMs: Date.now() - 3_600_000 },
-      { timestampMs: Date.now(), valueUsd: 42, usedPercent: 20, observedCostUsd: 8, epoch: 1 },
+      { timestampMs: Date.now() - 86_400_000, valueUsd: 40, epoch: 0 },
+      { timestampMs: Date.now(), valueUsd: 42, epoch: 1 },
     ],
-  })), 80).join("\n"));
-  assert.match(resetDash, /···/);
+  }));
+  assert.match(stripAnsi(renderFrame(state, 120, 40).join("\n")), /···/);
+});
 
-  const usage = stripAnsi(renderFrame(applyReport(createState("usage"), report()), 100).join("\n"));
-  assert.match(usage, /weeklygrant usage/);
-  assert.match(usage, /gpt-5\.2-codex/);
-  assert.match(usage, /Total tokens/);
-
-  const thanks = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 0 }, 80).join("\n"));
-  const thanksNext = stripAnsi(renderFrame({ ...createState("estimate"), phase: "leaving", spinner: 5 }, 80).join("\n"));
-  assert.match(thanks, /_____ _   _/);
-  assert.match(thanks, /star the repo/);
-  assert.equal(thanks, thanksNext);
+test("an early estimate remains visible", () => {
+  const state = applyReport(createState(), report({ confidence: "low", validPairs: 1, coveragePoints: 1, series: [] }));
+  const frame = stripAnsi(renderFrame(state, 120, 40).join("\n"));
+  assert.match(frame, /\$42\.00/);
+  assert.match(frame, /Early estimate/);
 });

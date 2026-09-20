@@ -4,7 +4,8 @@ import { parseArgs } from "../src/lib/args.js";
 
 test("parseArgs applies command-specific history defaults", () => {
   assert.equal(parseArgs([]).estimate.days, 30);
-  assert.equal(parseArgs(["usage"]).estimate.days, Infinity);
+  assert.equal(parseArgs(["usage"]).estimate.days, 30);
+  assert.equal(parseArgs(["usage"]).estimate.usageSummary, true);
   assert.equal(parseArgs(["--json"]).estimate.includeModelUsage, true);
 });
 

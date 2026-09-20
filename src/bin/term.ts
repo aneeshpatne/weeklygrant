@@ -4,8 +4,8 @@ import { styleText } from "node:util";
 const ANSI_RE = /\x1B\[[0-9;]*m/g;
 const ELLIPSIS = "…";
 
-export const ROUND_BOX = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" } as const;
-export const DOUBLE_BOX = { tl: "╔", tr: "╗", bl: "╚", br: "╝", h: "═", v: "║" } as const;
+const ROUND_BOX = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" } as const;
+const DOUBLE_BOX = { tl: "╔", tr: "╗", bl: "╚", br: "╝", h: "═", v: "║" } as const;
 
 export type Color = "cyan" | "green" | "yellow" | "red" | "magenta" | "gray" | "white";
 
@@ -13,14 +13,7 @@ export type TermKey = {
   input: string;
   name: string;
   ctrl: boolean;
-  meta: boolean;
-  shift: boolean;
   escape: boolean;
-  return: boolean;
-  leftArrow: boolean;
-  rightArrow: boolean;
-  upArrow: boolean;
-  downArrow: boolean;
 };
 
 export type StyleOpts = {
@@ -157,12 +150,6 @@ function groupByWidth(blocks: string[][], columns: number, gap: number, widthOf:
   return rows;
 }
 
-export function wrapRow(blocks: string[][], columns: number, gap = 1) {
-  if (!blocks.length) return [];
-  return groupByWidth(blocks, columns, gap, (block) => Math.max(0, ...block.map(visibleWidth)))
-    .flatMap((row, index) => index === 0 ? joinRow(row, gap) : ["", ...joinRow(row, gap)]);
-}
-
 export function wrapCards(contents: string[][], columns: number, gap = 1, boxOpts: Parameters<typeof box>[1] = {}) {
   if (!contents.length) return [];
   const sample = box(contents[0], boxOpts);
@@ -191,14 +178,7 @@ export function normalizeKey(input: string | undefined, key: readline.Key = {}):
     input: ctrlC ? "c" : (input && input !== "\x1b" ? input : letter),
     name,
     ctrl: Boolean(key.ctrl) || ctrlC,
-    meta: Boolean(key.meta),
-    shift: Boolean(key.shift),
     escape: name === "escape" || sequence === "\x1b",
-    return: name === "return",
-    leftArrow: name === "left",
-    rightArrow: name === "right",
-    upArrow: name === "up",
-    downArrow: name === "down",
   };
 }
 

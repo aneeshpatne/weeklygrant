@@ -35,10 +35,9 @@ fit are missing. Missing prices are not treated as free usage: affected interval
 are excluded from estimation. Local logs cannot account for usage on other
 devices or provide a complete account-wide bill.
 
-The dashboard also shows reset timing, observed cost, confidence, and an
-independent five-hour estimate when that quota window is recorded. Peak and
-average comparisons require at least two stable epochs, each spanning twelve
-hours and twenty quota points.
+The dashboard shows one grant-history graph, reset timing, observed cost,
+confidence, and peak/average percentage comparisons. Comparisons require at
+least two stable epochs, each spanning twelve hours and twenty quota points.
 
 ## Options
 
@@ -47,12 +46,12 @@ hours and twenty quota points.
 | `--home <path>` | Use a specific Codex home; defaults to `CODEX_HOME` or `~/.codex`. |
 | `--days <n>` | Include usage and quota observations from the last `n` days. |
 | `--all` | Scan all available history. |
-| `--json` | Print the report, diagnostics, pricing sources, and model series. |
+| `--json` | Print the report, diagnostics, pricing sources, and model totals. |
 | `--redact` | Hide the Codex home path in output. |
 | `--refresh-prices` | Make an optional request to models.dev for unknown models. |
 | `--help`, `--version` | Show help or the installed version. |
 
-Estimate mode defaults to 30 days. Usage and JSON modes default to all history.
+All modes default to 30 days; use `--all` when complete history is useful.
 The scanner visits `sessions/` and `archived_sessions/`, skips files older than
 the requested range, and reads earlier counters in included files to establish
 correct deltas before filtering event timestamps.
@@ -63,15 +62,9 @@ Use `--redact` before sharing JSON, which otherwise includes the local home path
 
 ## Keyboard controls
 
-| View | Controls |
-| --- | --- |
-| Estimate | Left/right: graph; up/down: range; `r`: rescan. |
-| Usage | Up/down: model; left/right: metric; `-`/`+`: range; `r`: rescan. |
-| Error or insufficient data | `r`: retry the scan. |
-| Any view | `q` or Escape: quit; Ctrl-C: exit immediately. |
-
-The optional exit reminder offers `s` to open the repository and `n` to hide the
-reminder permanently. Idle screens do not run animation timers.
+The estimate dashboard uses `r` to rescan and `q`, Escape, or Ctrl-C to exit.
+`weeklygrant usage` is intentionally a small, non-interactive table. Terminals
+too small for the dashboard show only a prompt to expand the window.
 
 ## Implementation
 
@@ -79,12 +72,12 @@ TypeScript and Node.js built-ins handle streaming JSONL parsing, bundled rate
 cards, prefix-sum cost windows, quota reset detection, and robust pooled fitting.
 The interactive dashboard runs estimation in a worker; text and JSON use the
 same estimator. The scanner prices and collects records one file at a time,
-skips conversation payloads, and reuses cost indexes for weekly and five-hour
-fits. Malformed accounting records and unreadable files appear in JSON diagnostics.
+skips conversation payloads, and reuses a cost index for the weekly fit.
+Malformed accounting records and unreadable files appear in JSON diagnostics.
 
 ```
 src/bin/    CLI, terminal renderer, dashboard, worker
-src/lib/    Parsing, pricing, estimation, charts, configuration
+src/lib/    Parsing, pricing, estimation, formatting, charting
 test/       Synthetic regression tests
 scripts/    Published-package smoke test and size budget
 ```
@@ -101,8 +94,8 @@ npm run check:size
 npm run check:package
 ```
 
-Published bundles have no runtime dependencies and must stay below 22 KB packed
-and 60 KB unpacked. CI verifies tests, types, the build, installed-package
+Published bundles have no runtime dependencies and must stay below 19 KB packed
+and 50 KB unpacked. CI verifies tests, types, the build, installed-package
 behavior, size budgets, and dependency auditing. Matching version tags publish
 through npm trusted publishing.
 

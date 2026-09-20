@@ -6,7 +6,6 @@ import path from "node:path";
 import {
   bucketSeries,
   buildCostLanes,
-  buildModelUsageSeries,
   costInWindow,
   estimateCodexGrant,
   estimateGrantFromLogs,
@@ -472,17 +471,6 @@ test("summarizes token usage and API value by model", () => {
   ]);
 });
 
-test("builds cumulative per-model usage series", () => {
-  const result = buildModelUsageSeries([
-    { timestampMs: 2_000, model: "gpt-5.2-codex", uncachedInput: 20, cachedInput: 5, billedOutput: 2, eligible: true, costUsd: 0.02 },
-    { timestampMs: 1_000, model: "gpt-5.2-codex", uncachedInput: 10, cachedInput: 3, billedOutput: 1, eligible: true, costUsd: 0.01 },
-  ]);
-  assert.deepEqual(result.map(({ timestampMs, totalTokens, apiValueUsd }) => ({ timestampMs, totalTokens, apiValueUsd })), [
-    { timestampMs: 1_000, totalTokens: 14, apiValueUsd: 0.01 },
-    { timestampMs: 2_000, totalTokens: 41, apiValueUsd: 0.03 },
-  ]);
-});
-
 test("cost windows use prefix sums and ignore other quota ids", () => {
   const lanes = buildCostLanes([
     { timestampMs: 1_000, costUsd: 1, eligible: true, quotaLimitId: "codex" },
@@ -525,21 +513,6 @@ test("estimate series is bucketed when the history is long", () => {
   assert.equal(result.validPairs, 1);
   assert.equal(result.series.length <= 1_000, true);
   assert.equal(result.series.length >= 2, true);
-});
-
-test("buildModelUsageSeries caps each model to maxPoints", () => {
-  const events = Array.from({ length: 50 }, (_, index) => ({
-    timestampMs: index,
-    model: "gpt-5.2-codex",
-    uncachedInput: 1,
-    cachedInput: 0,
-    billedOutput: 0,
-    eligible: true,
-    costUsd: 0.01,
-  }));
-  const result = buildModelUsageSeries(events, 10);
-  assert.equal(result.length, 10);
-  assert.equal(result.at(-1).totalTokens, 50);
 });
 
 test("parseLogFile uses the provided mtime fallback and reads token deltas", () => {
@@ -685,7 +658,7 @@ test("a scheduled weekly reset splits low and zero usage epochs", () => {
   assert.deepEqual(epochs.map((epoch) => epoch.map((item) => item.usedPercent)), [[1], [0, 0]]);
 });
 
-test("estimateCodexGrant skips usage series unless requested", async () => {
+test("estimateCodexGrant summarizes models only when requested", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-home-"));
   fs.mkdirSync(path.join(root, "sessions"));
   const file = path.join(root, "sessions", "session.jsonl");
@@ -695,44 +668,11 @@ test("estimateCodexGrant skips usage series unless requested", async () => {
     payload: { info: { total_token_usage: { input_tokens: 10, cached_input_tokens: 0, output_tokens: 1 } } },
   })}\n`);
   const skipped = await estimateCodexGrant({ home: root });
-  const included = await estimateCodexGrant({ home: root, includeUsageSeries: true });
+  const included = await estimateCodexGrant({ home: root, includeModelUsage: true });
+  const summary = await estimateCodexGrant({ home: root, usageSummary: true });
   assert.deepEqual(skipped.modelUsage, []);
-  assert.deepEqual(skipped.modelUsageSeries, []);
   assert.equal(included.modelUsage.length, 1);
-  assert.equal(included.modelUsageSeries.length, 1);
+  assert.equal(summary.modelUsage.length, 1);
+  assert.equal(summary.algorithm, undefined);
   fs.rmSync(root, { recursive: true, force: true });
-});
-
-test("estimateCodexGrant reports a five-hour grant and its weekly share", async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-five-hour-"));
-  try {
-    fs.mkdirSync(path.join(root, "sessions"));
-    const file = path.join(root, "sessions", "session.jsonl");
-    const token = (timestamp: number, input: number, weekly: number, fiveHour: number) => JSON.stringify({
-      type: "token_count",
-      timestamp,
-      payload: {
-        info: { total_token_usage: { input_tokens: input, cached_input_tokens: 0, output_tokens: 0 } },
-        rate_limits: {
-          limit_id: "codex",
-          primary: { window_minutes: 300, used_percent: fiveHour, resets_at: 20_000 },
-          secondary: { window_minutes: 10_080, used_percent: weekly, resets_at: 700_000 },
-        },
-      },
-    });
-    fs.writeFileSync(file, [
-      JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.2-codex" } }),
-      token(1_000, 100_000, 0, 0),
-      token(2_000, 200_000, 1, 6.25),
-    ].join("\n"));
-    const report = await estimateCodexGrant({ home: root, days: Infinity });
-    assert.equal(report.fiveHour.present, true);
-    assert.equal(report.fiveHour.windowMinutes, 300);
-    assert.ok(report.fiveHour.headlineUsd > 0);
-    const weeklyShare = report.fiveHour.maxSpendPercentOfWeekly;
-    assert.ok(typeof weeklyShare === "number");
-    assert.ok(Math.abs(weeklyShare - 16) < 0.001);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-  }
 });

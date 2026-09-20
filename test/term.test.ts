@@ -13,19 +13,12 @@ import {
   wrapText,
 } from "../src/bin/term.js";
 
-test("normalizeKey maps letters, arrows, escape, and ctrl+c", () => {
+test("normalizeKey maps letters, escape, and ctrl+c", () => {
   assert.equal(normalizeKey("q", { name: "q" }).input, "q");
   assert.equal(isQuitKey(normalizeKey("q", { name: "q" })), true);
   assert.equal(isQuitKey(normalizeKey("\x1b", { name: "escape", sequence: "\x1b" })), true);
   assert.equal(isQuitKey(normalizeKey("\x03", { name: "c", ctrl: true, sequence: "\x03" })), true);
   assert.equal(isQuitKey(normalizeKey("r", { name: "r" })), false);
-  assert.equal(normalizeKey(undefined, { name: "left" }).leftArrow, true);
-  assert.equal(normalizeKey(undefined, { name: "right" }).rightArrow, true);
-  assert.equal(normalizeKey(undefined, { name: "up" }).upArrow, true);
-  assert.equal(normalizeKey(undefined, { name: "down" }).downArrow, true);
-  assert.equal(normalizeKey("-", { name: "-" }).input, "-");
-  assert.equal(normalizeKey("+", { name: "+" }).input, "+");
-  assert.equal(normalizeKey("\r", { name: "return" }).return, true);
 });
 
 test("truncate uses an ellipsis at the code-point boundary", () => {

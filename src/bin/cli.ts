@@ -49,14 +49,11 @@ function printUsage(report) {
       : "unpriced";
     return [
       item.model,
-      integer(item.uncachedInputTokens),
-      integer(item.cachedInputTokens),
-      integer(item.outputTokens),
       integer(item.totalTokens),
       value,
     ];
   });
-  const headers = ["Model", "Input", "Cached", "Output", "Total", "API value"];
+  const headers = ["Model", "Tokens", "API value"];
   const widths = headers.map((header, index) => Math.max(header.length, ...rows.map((row) => row[index].length)));
   const line = (row) => row.map((cell, index) => index === 0 ? cell.padEnd(widths[index]) : cell.padStart(widths[index])).join("  ");
   console.log(line(headers));
@@ -77,9 +74,9 @@ async function main() {
     printHelp();
     return;
   }
-  if (process.stdout.isTTY && process.stdin.isTTY && !parsed.json) {
+  if (command === "estimate" && process.stdout.isTTY && process.stdin.isTTY && !parsed.json) {
     const { runTui } = await import("./tui.js");
-    await runTui(estimateOptions, command === "usage" ? "usage" : "estimate");
+    await runTui(estimateOptions);
     return;
   }
   const report = await estimateCodexGrant(estimateOptions);
@@ -101,10 +98,6 @@ async function main() {
     const vsPeak = signedPercent(report.history.vsPeakPercent) || "n/a";
     const vsAverage = signedPercent(report.history.vsAveragePercent) || "n/a";
     console.log(`Vs peak: ${vsPeak} (${money(report.history.peakUsd)}) · Vs average: ${vsAverage} (${money(report.history.averageUsd)}) · ${report.history.comparableWeeks} comparable weeks`);
-  }
-  if (report.fiveHour?.present) {
-    const share = report.fiveHour.maxSpendPercentOfWeekly == null ? "unknown share" : `${report.fiveHour.maxSpendPercentOfWeekly.toFixed(1)}% of weekly`;
-    console.log(`5-hour estimate: ${money(report.fiveHour.headlineUsd)} · ${share} · ${report.fiveHour.confidence} confidence`);
   }
   console.log(`Measurements: ${report.validPairs} valid pairs, ${report.pricedEvents} priced events, ${report.pendingEvents} pending events`);
   if (!report.filesScanned) console.log(parsed.redact ? "No Codex JSONL sessions found" : `No Codex JSONL sessions found under ${report.codexHome}`);

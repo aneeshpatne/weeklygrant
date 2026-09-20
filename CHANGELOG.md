@@ -2,6 +2,14 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.3.0
+
+- Reduced the dashboard to one grant-history graph while preserving peak and average percentage comparisons.
+- Replaced cramped-terminal fallback rendering with a clear expand-terminal prompt.
+- Simplified `weeklygrant usage` to a non-interactive three-column, 30-day summary.
+- Removed per-model usage series, the secondary five-hour estimate, graph navigation state, and the exit-time repository nudge/configuration path.
+- Tightened the package budget to 19 KB packed and 50 KB unpacked.
+
 ## 1.2.7
 
 - Price Codex auto-review (`codex-auto-review`) at official GPT-5.6 Luna rates, including long context and Fast mode.

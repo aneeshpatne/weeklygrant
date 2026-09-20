@@ -1,6 +1,6 @@
 import type { EstimateOptions } from "./codex-grant.js";
 
-export type CliCommand = "estimate" | "usage" | "help" | "version";
+type CliCommand = "estimate" | "usage" | "help" | "version";
 
 export type CliOptions = {
   command: CliCommand;
@@ -51,8 +51,7 @@ export function parseArgs(args: string[]): CliOptions {
   }
 
   if (daysValue !== undefined && flags.has("--all")) throw new Error("--days and --all cannot be used together");
-  const completeHistory = command === "usage" || flags.has("--json") || flags.has("--all");
-  const days = daysValue === undefined ? (completeHistory ? Infinity : 30) : Number(daysValue);
+  const days = daysValue === undefined ? (flags.has("--all") ? Infinity : 30) : Number(daysValue);
   if (daysValue !== undefined && (!Number.isFinite(days) || days < 0)) throw new Error("--days must be a non-negative number");
   return {
     command,
@@ -60,8 +59,8 @@ export function parseArgs(args: string[]): CliOptions {
       ...(home === undefined ? {} : { home }),
       days,
       refreshPrices: flags.has("--refresh-prices"),
-      includeUsageSeries: command === "usage" || flags.has("--json"),
       includeModelUsage: command === "usage" || flags.has("--json"),
+      usageSummary: command === "usage" && !flags.has("--json"),
     },
     json: flags.has("--json"),
     redact: flags.has("--redact"),

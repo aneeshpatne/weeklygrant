@@ -2,12 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const WEEKLY_GRANT_VERSION = "weekly-grant-estimate-v2";
-export const MAX_USAGE_SERIES_POINTS = 1_000;
+const WEEKLY_GRANT_VERSION = "weekly-grant-estimate-v2";
+const MAX_SERIES_POINTS = 1_000;
 const WEEKLY_MINUTES = 10_080;
 const WEEKLY_TOLERANCE = 240;
-const FIVE_HOUR_MINUTES = 300;
-const FIVE_HOUR_TOLERANCE = 30;
+const PRIMARY_WINDOW_MINUTES = 300;
+const PRIMARY_WINDOW_TOLERANCE = 30;
 const RESET_JITTER_MS = 2 * 60 * 60 * 1000;
 const RESET_DROP_POINTS = 12;
 const HARD_RESET_DROP = 25;
@@ -65,11 +65,11 @@ export type EstimateOptions = {
   days?: number;
   refreshPrices?: boolean;
   fetch?: typeof globalThis.fetch | null;
-  includeUsageSeries?: boolean;
   includeModelUsage?: boolean;
+  usageSummary?: boolean;
 };
 
-export const OFFICIAL_CARDS: Record<string, RateCard> = {
+const OFFICIAL_CARDS: Record<string, RateCard> = {
   "gpt-5": card(1.25, 10, 0.125),
   "gpt-5-codex": card(1.25, 10, 0.125),
   "gpt-5.1": card(1.25, 10, 0.125),
@@ -117,7 +117,7 @@ export function timestampMs(value) {
   return parsed < 1e12 ? parsed * 1000 : parsed;
 }
 
-export function normalizeModel(model) {
+function normalizeModel(model) {
   return String(model || "").trim().toLowerCase().replaceAll("/", "-").replace(/^openai-/, "");
 }
 
@@ -192,7 +192,7 @@ export function summarizeModelUsage(events) {
   return [...models.values()].sort((a, b) => b.apiValueUsd - a.apiValueUsd || b.totalTokens - a.totalTokens || a.model.localeCompare(b.model));
 }
 
-export function bucketSeries(points, maxPoints = MAX_USAGE_SERIES_POINTS) {
+export function bucketSeries(points, maxPoints = MAX_SERIES_POINTS) {
   if (!points.length || points.length <= maxPoints) return points;
   const start = points[0].timestampMs;
   const span = Math.max(1, points.at(-1).timestampMs - start);
@@ -204,64 +204,34 @@ export function bucketSeries(points, maxPoints = MAX_USAGE_SERIES_POINTS) {
   return buckets.filter(Boolean);
 }
 
-export function buildModelUsageSeries(events, maxPoints = MAX_USAGE_SERIES_POINTS) {
-  const totals = new Map();
-  const byModel = new Map();
-  for (const event of [...events].sort((a, b) => a.timestampMs - b.timestampMs)) {
-    const model = normalizeModel(event.model) || "unknown";
-    const current = totals.get(model) || { uncachedInputTokens: 0, cachedInputTokens: 0, outputTokens: 0, totalTokens: 0, apiValueUsd: 0 };
-    current.uncachedInputTokens += number(event.uncachedInput);
-    current.cachedInputTokens += number(event.cachedInput);
-    current.outputTokens += number(event.billedOutput);
-    current.totalTokens = current.uncachedInputTokens + current.cachedInputTokens + current.outputTokens;
-    if (event.eligible) current.apiValueUsd += number(event.costUsd);
-    totals.set(model, current);
-    const list = byModel.get(model) || [];
-    list.push({ timestampMs: event.timestampMs, model, ...current });
-    byModel.set(model, list);
-  }
-  const series: any[] = [];
-  for (const list of byModel.values()) series.push(...bucketSeries(list, maxPoints));
-  return series.sort((a, b) => a.timestampMs - b.timestampMs || a.model.localeCompare(b.model));
-}
-
 function isAuxiliaryQuota(rateLimits) {
   const id = String(rateLimits.limit_id ?? rateLimits.limitId ?? "").toLowerCase();
   const name = String(rateLimits.limit_name ?? rateLimits.limitName ?? "").toLowerCase();
   return id === "base_model_inference" || name === "gpt-reserve";
 }
 
-function quotaObservations(rateLimits, timestamp, sessionId) {
-  if (!rateLimits || typeof rateLimits !== "object" || isAuxiliaryQuota(rateLimits)) return { weekly: null, fiveHour: null };
+function weeklyObservation(rateLimits, timestamp, sessionId) {
+  if (!rateLimits || typeof rateLimits !== "object" || isAuxiliaryQuota(rateLimits)) return null;
   const windows = [rateLimits.primary, rateLimits.secondary].filter(Boolean).map((window) => ({
     window,
     minutes: number(window.window_minutes ?? window.windowMinutes, NaN),
   }));
-  const pick = (target: number, tolerance: number, windowKind: "weekly" | "five_hour") => {
-    const candidate = windows
-      .map(({ window, minutes }) => ({ window, minutes, distance: Math.abs(minutes - target) }))
-      .filter(({ distance }) => distance <= tolerance)
-      .sort((a, b) => a.distance - b.distance)[0];
-    if (!candidate) return null;
-    return {
-      timestampMs: timestamp,
-      usedPercent: number(candidate.window.used_percent ?? candidate.window.usedPercent, NaN),
-      resetsAtMs: timestampMs(candidate.window.resets_at ?? candidate.window.resetsAt),
-      limitId: String(rateLimits.limit_id ?? rateLimits.limitId ?? "codex"),
-      planType: rateLimits.plan_type ?? rateLimits.planType ?? null,
-      accountKey: "local",
-      sessionId,
-      windowKind,
-      windowMinutes: candidate.minutes,
-      paired: false,
-    };
+  const candidate = windows
+    .map(({ window, minutes }) => ({ window, minutes, distance: Math.abs(minutes - WEEKLY_MINUTES) }))
+    .filter(({ distance }) => distance <= WEEKLY_TOLERANCE)
+    .sort((a, b) => a.distance - b.distance)[0];
+  if (!candidate) return null;
+  const paired = windows.some(({ minutes }) => Math.abs(minutes - PRIMARY_WINDOW_MINUTES) <= PRIMARY_WINDOW_TOLERANCE);
+  return {
+    timestampMs: timestamp,
+    usedPercent: number(candidate.window.used_percent ?? candidate.window.usedPercent, NaN),
+    resetsAtMs: timestampMs(candidate.window.resets_at ?? candidate.window.resetsAt),
+    limitId: String(rateLimits.limit_id ?? rateLimits.limitId ?? "codex"),
+    planType: rateLimits.plan_type ?? rateLimits.planType ?? null,
+    accountKey: "local",
+    sessionId,
+    paired,
   };
-  const weekly = pick(WEEKLY_MINUTES, WEEKLY_TOLERANCE, "weekly");
-  const fiveHour = pick(FIVE_HOUR_MINUTES, FIVE_HOUR_TOLERANCE, "five_hour");
-  const paired = Boolean(weekly && fiveHour);
-  if (weekly) weekly.paired = paired;
-  if (fiveHour) fiveHour.paired = paired;
-  return { weekly, fiveHour };
 }
 
 function typeFromPrefix(head: string) {
@@ -379,7 +349,7 @@ function* readCandidateLines(file: string) {
   }
 }
 
-export function parseLogFile(file, mtimeMs?: number, size?: number) {
+export function parseLogFile(file, mtimeMs?: number, size?: number, includeQuota = true) {
   let fileMtime = mtimeMs;
   let fileSize = size;
   if (fileMtime == null || fileSize == null) {
@@ -394,9 +364,8 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
   let previous = { uncachedInput: 0, cachedInput: 0, billedOutput: 0, reasoning: 0 };
   const events: any[] = [];
   const observations: any[] = [];
-  const fiveHourObservations: any[] = [];
   let malformedLines = 0;
-  if (!fileSize) return { events, observations, fiveHourObservations, malformedLines };
+  if (!fileSize) return { events, observations, malformedLines };
   for (const line of readCandidateLines(file)) {
     if (!line.trim()) continue;
     let object;
@@ -418,15 +387,13 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
     }
     if (type !== "token_count") continue;
     const at = timestampMs(object.timestamp ?? payload.timestamp) ?? fileMtime;
-    const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
-    const quota = quotaObservations(rateLimits, at, sessionId);
-    if (quota.weekly) observations.push(quota.weekly);
-    if (quota.fiveHour) fiveHourObservations.push(quota.fiveHour);
-    const grantWindow = [quota.weekly, quota.fiveHour].find((item) => item?.paired) ?? null;
-    if (grantWindow) lastLimitId = grantWindow.limitId;
-    else {
-      const observation = quota.weekly ?? quota.fiveHour;
-      if (observation) lastLimitId = observation.limitId;
+    if (includeQuota) {
+      const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
+      const quota = weeklyObservation(rateLimits, at, sessionId);
+      if (quota) {
+        observations.push(quota);
+        lastLimitId = quota.limitId;
+      }
     }
     const info = payload.info ?? object.info ?? {};
     const usage = info.total_token_usage ?? info.totalTokenUsage ?? payload.total_token_usage;
@@ -475,13 +442,13 @@ export function parseLogFile(file, mtimeMs?: number, size?: number) {
         model,
         serviceTier,
         sessionId,
-        quotaLimitId: grantWindow?.limitId ?? lastLimitId,
+        quotaLimitId: lastLimitId,
         requestInputTokens: Number.isFinite(requestInput) ? requestInput : null,
         counterReset,
       });
     }
   }
-  return { events, observations, fiveHourObservations, malformedLines };
+  return { events, observations, malformedLines };
 }
 
 function walkJsonl(root, cutoff, output: JsonlFile[] = [], diagnostics: ScanDiagnostics = { malformedLines: 0, unreadableFiles: 0 }) {
@@ -505,7 +472,7 @@ function walkJsonl(root, cutoff, output: JsonlFile[] = [], diagnostics: ScanDiag
   return output;
 }
 
-export function collapseObservations(observations) {
+function collapseObservations(observations) {
   const grouped = new Map();
   for (const item of observations) {
     if (!Number.isFinite(item.timestampMs) || !Number.isFinite(item.usedPercent) || item.usedPercent < 0 || item.usedPercent > 100) continue;
@@ -794,7 +761,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
     pendingEvents,
     resetsAtMs: latest?.resetsAtMs ?? null,
     planType: latest?.planType ?? null,
-    series: bucketSeries(series, MAX_USAGE_SERIES_POINTS),
+    series: bucketSeries(series, MAX_SERIES_POINTS),
   };
 }
 
@@ -829,7 +796,7 @@ export async function loadRateCards(fetchImpl: typeof globalThis.fetch | null = 
   finally { clearTimeout(timeout); }
 }
 
-export async function estimateCodexGrant(options: EstimateOptions = {}) {
+export async function estimateCodexGrant(options: EstimateOptions = {}): Promise<any> {
   if (options.days != null && options.days !== Infinity && (!Number.isFinite(options.days) || options.days < 0)) throw new Error("days must be a non-negative number");
   const home = path.resolve(options.home || String(process.env.CODEX_HOME || "").split(",")[0] || path.join(os.homedir(), ".codex"));
   const cardsPromise = loadRateCards(options.refreshPrices ? options.fetch ?? globalThis.fetch : null);
@@ -839,46 +806,34 @@ export async function estimateCodexGrant(options: EstimateOptions = {}) {
   const cards = await cardsPromise;
   const events: any[] = [];
   const observations: any[] = [];
-  const fiveHourObservations: any[] = [];
   for (const entry of files) {
     let parsed;
-    try { parsed = parseLogFile(entry.file, entry.mtimeMs, entry.size); }
+    try { parsed = parseLogFile(entry.file, entry.mtimeMs, entry.size, !options.usageSummary); }
     catch { diagnostics.unreadableFiles += 1; continue; }
     diagnostics.malformedLines += parsed.malformedLines;
     for (const event of parsed.events) if (event.timestampMs >= cutoff) events.push(priceTokens(event, cards));
     for (const item of parsed.observations) if (item.timestampMs >= cutoff) observations.push(item);
-    for (const item of parsed.fiveHourObservations) if (item.timestampMs >= cutoff) fiveHourObservations.push(item);
+  }
+  if (options.usageSummary) {
+    return {
+      codexHome: home,
+      filesScanned: files.length,
+      diagnostics,
+      scanWindowDays: Number.isFinite(options.days) ? options.days : null,
+      modelUsage: summarizeModelUsage(events),
+    };
   }
   const lanes = buildCostLanes(events);
   const report = estimateGrantFromLogs(events, observations, lanes);
-  const fiveHourEstimate = fiveHourObservations.length ? estimateGrantFromLogs(events, fiveHourObservations, lanes) : null;
-  const fiveHour = fiveHourEstimate ? {
-    present: true,
-    windowMinutes: FIVE_HOUR_MINUTES,
-    headlineUsd: fiveHourEstimate.headlineUsd,
-    rawUsd: fiveHourEstimate.rawUsd,
-    confidence: fiveHourEstimate.confidence,
-    usedPercent: fiveHourEstimate.weeklyUsedPercent,
-    resetsAtMs: fiveHourEstimate.resetsAtMs,
-    validPairs: fiveHourEstimate.validPairs,
-    coveragePoints: fiveHourEstimate.coveragePoints,
-    matchedCoveragePoints: fiveHourEstimate.matchedCoveragePoints,
-    series: fiveHourEstimate.series,
-    maxSpendPercentOfWeekly: fiveHourEstimate.headlineUsd != null && report.headlineUsd != null && report.headlineUsd > 0
-      ? fiveHourEstimate.headlineUsd / report.headlineUsd * 100
-      : null,
-  } : { present: false };
   const pricingSources = [...new Set(events.filter((event) => event.eligible).map((event) => event.pricingStatus))].sort();
   return {
     ...report,
-    fiveHour,
     pricingSources,
     rateCardMode: options.refreshPrices ? "bundled-plus-models-dev" : "bundled-official",
     codexHome: home,
     filesScanned: files.length,
     diagnostics,
     scanWindowDays: Number.isFinite(options.days) ? options.days : null,
-    modelUsage: options.includeModelUsage || options.includeUsageSeries ? summarizeModelUsage(events) : [],
-    modelUsageSeries: options.includeUsageSeries ? buildModelUsageSeries(events) : [],
+    modelUsage: options.includeModelUsage ? summarizeModelUsage(events) : [],
   };
 }
