@@ -1,8 +1,10 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { Worker } from "node:worker_threads";
 import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
 import { lineChart, RESET_DOT, RESET_MARK } from "../lib/chart.js";
 import { dateFormat, moneyFormat, signedPercent } from "../lib/format.js";
+import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
 import {
   attach,
   box,
@@ -22,9 +24,23 @@ const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
 const STAT_WIDTH = 24;
 const MIN_COLUMNS = 72;
 const MIN_ROWS = 28;
+const THANK_YOU_ART = [
+  String.raw` _____ _   _    _    _   _ _  __`,
+  String.raw`|_   _| | | |  / \  | \ | | |/ /`,
+  String.raw`  | | | |_| | / _ \ |  \| | ' / `,
+  String.raw`  | | |  _  |/ ___ \| |\  | . \ `,
+  String.raw`  |_| |_| |_/_/   \_\_| \_|_|\_\ `,
+  "",
+  String.raw`__   _____  _   _`,
+  String.raw`\ \ / / _ \| | | |`,
+  String.raw` \ V / | | | | | |`,
+  String.raw`  | |  |_| | |_| |`,
+  String.raw`  |_| \___/ \___/ `,
+];
+const THANK_YOU_ART_WIDTH = Math.max(...THANK_YOU_ART.map((line) => line.length));
 
-type TuiPhase = "loading" | "ready" | "error";
-export type TuiScreen = "loading" | "error" | "splash" | "dashboard";
+type TuiPhase = "loading" | "ready" | "error" | "leaving";
+export type TuiScreen = "loading" | "error" | "splash" | "dashboard" | "thanks";
 
 export type TuiState = {
   phase: TuiPhase;
@@ -66,6 +82,7 @@ export function createState(): TuiState {
 export function visibleScreen(state: TuiState): TuiScreen {
   if (state.phase === "loading") return "loading";
   if (state.phase === "error") return "error";
+  if (state.phase === "leaving") return "thanks";
   if (state.report?.headlineUsd == null && !hasGraphableSeries(state.report?.series)) return "splash";
   return "dashboard";
 }
@@ -104,6 +121,11 @@ function hint(pairs: Array<[string, string]>) {
   ]).join("");
 }
 
+function centerText(text: string, width: number) {
+  if (text.length >= width) return text;
+  return `${" ".repeat(Math.floor((width - text.length) / 2))}${text}`;
+}
+
 function resizePrompt(columns: number, rows: number) {
   const width = Math.max(1, columns - 2);
   return padX([
@@ -134,6 +156,27 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
     return [
       style(`weeklygrant: ${state.error || "unknown error"}`, { color: "red" }),
       hint([["r", "retry"], ["q", "quit"]]),
+    ];
+  }
+  if (screen === "thanks") {
+    const boxWidth = Math.min(width, 64);
+    const textWidth = Math.max(1, boxWidth - 6);
+    const showArt = textWidth >= THANK_YOU_ART_WIDTH;
+    const art = showArt ? THANK_YOU_ART.map((line) => style(line, { bold: true, color: "cyan" })) : [];
+    const inner = box([
+      ...art,
+      ...(showArt ? [""] : []),
+      ...(!showArt ? [style(centerText("THANK YOU", textWidth), { bold: true, color: "cyan" })] : []),
+      "",
+      "If this was useful, star the repo.",
+      style(REPO_URL, { color: "cyan" }),
+    ], { style: "round", borderColor: "cyan", paddingX: 2, paddingY: 1, width: boxWidth });
+    return [
+      style("weeklygrant", { bold: true, color: "cyan" }),
+      "",
+      ...inner,
+      "",
+      hint([["s", "open"], ["n", "don't show again"], ["q", "quit"]]),
     ];
   }
   if (screen === "splash") {
@@ -208,7 +251,7 @@ function renderDashboard(state: TuiState, width: number) {
   ];
 }
 
-export type TuiAction = "quit" | "retry";
+export type TuiAction = "quit" | "retry" | "open-repo" | "hide-nudge";
 
 export function applyReport(state: TuiState, report): TuiState {
   return { ...state, phase: "ready", report, error: null };
@@ -228,7 +271,16 @@ function tickLoading(state: TuiState, elapsedMs: number): TuiState {
 }
 
 export function handleKey(state: TuiState, key: TermKey): { state: TuiState; actions: TuiAction[] } {
-  if (isQuitKey(key)) return { state, actions: ["quit"] };
+  if (state.phase === "leaving") {
+    if (key.input === "n") return { state, actions: ["hide-nudge", "quit"] };
+    if (key.input === "s") return { state, actions: ["open-repo"] };
+    if (isQuitKey(key)) return { state, actions: ["quit"] };
+    return { state, actions: [] };
+  }
+  if (isQuitKey(key)) {
+    if (state.phase === "ready" && !isStarNudgeHidden()) return { state: { ...state, phase: "leaving" }, actions: [] };
+    return { state, actions: ["quit"] };
+  }
   if (key.input === "r" && state.phase !== "loading") {
     return {
       state: { ...state, phase: "loading", report: null, error: null, spinner: 0, seconds: 0 },
@@ -236,6 +288,17 @@ export function handleKey(state: TuiState, key: TermKey): { state: TuiState; act
     };
   }
   return { state, actions: [] };
+}
+
+function openInBrowser(url: string) {
+  const options = { stdio: "ignore" as const, detached: true };
+  try {
+    const child = process.platform === "darwin" ? spawn("open", [url], options)
+      : process.platform === "win32" ? spawn("cmd", ["/c", "start", "", url], options)
+      : spawn("xdg-open", [url], options);
+    child.on("error", () => {});
+    child.unref();
+  } catch {}
 }
 
 function estimateInWorker(options): { worker: Worker; done: Promise<any> } {
@@ -318,6 +381,10 @@ async function runSession(term: Terminal, options) {
         if (action === "retry") {
           generation += 1;
           load(generation);
+        }
+        if (action === "open-repo") openInBrowser(REPO_URL);
+        if (action === "hide-nudge") {
+          try { persistHideStarNudge(); } catch {}
         }
       }
       scheduleTick();

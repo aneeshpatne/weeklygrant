@@ -64,7 +64,9 @@ Use `--redact` before sharing JSON, which otherwise includes the local home path
 
 The estimate dashboard uses `r` to rescan and `q`, Escape, or Ctrl-C to exit.
 `weeklygrant usage` is intentionally a small, non-interactive table. Terminals
-too small for the dashboard show only a prompt to expand the window.
+too small for the dashboard show only a prompt to expand the window. On a normal
+quit, the dashboard offers a small repository star reminder; `n` hides it
+permanently and `s` opens the repository.
 
 ## Implementation
 

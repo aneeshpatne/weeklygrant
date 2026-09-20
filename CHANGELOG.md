@@ -2,6 +2,10 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.3.1
+
+- Restore the optional quit-time thank-you screen with repository star reminder and persistent hide/open controls.
+
 ## 1.3.0
 
 - Reduced the dashboard to one grant-history graph while preserving peak and average percentage comparisons.

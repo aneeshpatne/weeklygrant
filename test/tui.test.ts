@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { hasGraphableSeries, isStableEstimate } from "../src/lib/codex-grant.js";
 import { normalizeKey, stripAnsi, visibleWidth } from "../src/bin/term.js";
@@ -41,6 +44,18 @@ function report(overrides = {}) {
   };
 }
 
+function withConfig(run: () => void) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-tui-config-"));
+  const previous = process.env.WEEKLYGRANT_CONFIG;
+  process.env.WEEKLYGRANT_CONFIG = path.join(dir, "config.json");
+  try { run(); }
+  finally {
+    if (previous === undefined) delete process.env.WEEKLYGRANT_CONFIG;
+    else process.env.WEEKLYGRANT_CONFIG = previous;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 test("loading, splash, and dashboard screens are selected from state", () => {
   assert.equal(visibleScreen(createState()), "loading");
   assert.equal(visibleScreen({ ...createState(), phase: "error", error: "boom" }), "error");
@@ -58,14 +73,28 @@ test("loading, splash, and dashboard screens are selected from state", () => {
   assert.equal(visibleScreen(applyReport(createState(), report())), "dashboard");
 });
 
-test("quit exits immediately and ready screens can rescan", () => {
-  assert.deepEqual(handleKey(createState(), key("q")).actions, ["quit"]);
-  assert.deepEqual(handleKey(applyReport(createState(), report()), key("escape")).actions, ["quit"]);
-  assert.deepEqual(handleKey(applyError(createState(), "failed"), key("ctrl-c")).actions, ["quit"]);
+test("quit shows the thank-you screen and ready screens can rescan", () => {
+  withConfig(() => {
+    assert.deepEqual(handleKey(createState(), key("q")).actions, ["quit"]);
+    assert.equal(handleKey(applyReport(createState(), report()), key("escape")).state.phase, "leaving");
+    assert.deepEqual(handleKey(applyError(createState(), "failed"), key("ctrl-c")).actions, ["quit"]);
 
-  const retried = handleKey(applyReport(createState(), report()), key("r"));
-  assert.deepEqual(retried.actions, ["retry"]);
-  assert.equal(retried.state.phase, "loading");
+    const retried = handleKey(applyReport(createState(), report()), key("r"));
+    assert.deepEqual(retried.actions, ["retry"]);
+    assert.equal(retried.state.phase, "loading");
+  });
+});
+
+test("thank-you screen supports opening and hiding the nudge", () => {
+  withConfig(() => {
+    const ready = applyReport(createState(), report());
+    const leaving = handleKey(ready, key("q")).state;
+    assert.equal(leaving.phase, "leaving");
+    assert.equal(visibleScreen(leaving), "thanks");
+    assert.deepEqual(handleKey(leaving, key("s")).actions, ["open-repo"]);
+    assert.deepEqual(handleKey(leaving, key("n")).actions, ["hide-nudge", "quit"]);
+    assert.match(stripAnsi(renderFrame(leaving, 120, 40).join("\n")), /star the repo/);
+  });
 });
 
 test("missing prices are reported only when no usage could be priced", () => {
