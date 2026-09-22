@@ -63,6 +63,8 @@ Use `--redact` before sharing JSON, which otherwise includes the local home path
 ## Keyboard controls
 
 The estimate dashboard uses `r` to rescan and `q`, Escape, or Ctrl-C to exit.
+When a newer npm release is available, it shows a quiet update notice; press
+`u` to exit the current dashboard and run `npx weeklygrant@latest`.
 `weeklygrant usage` is intentionally a small, non-interactive table. Terminals
 too small for the dashboard show only a prompt to expand the window. On a normal
 quit, the dashboard offers a small repository star reminder; `n` hides it

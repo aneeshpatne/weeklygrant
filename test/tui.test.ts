@@ -7,6 +7,7 @@ import { hasGraphableSeries, isStableEstimate } from "../src/lib/codex-grant.js"
 import { normalizeKey, stripAnsi, visibleWidth } from "../src/bin/term.js";
 import {
   applyError,
+  applyLatestVersion,
   applyReport,
   createState,
   handleKey,
@@ -95,6 +96,14 @@ test("thank-you screen supports opening and hiding the nudge", () => {
     assert.deepEqual(handleKey(leaving, key("n")).actions, ["hide-nudge", "quit"]);
     assert.match(stripAnsi(renderFrame(leaving, 120, 40).join("\n")), /star the repo/);
   });
+});
+
+test("an available update is shown and can launch the latest version", () => {
+  const state = applyLatestVersion(applyReport(createState("1.3.1"), report()), "1.4.0");
+  const frame = stripAnsi(renderFrame(state, 120, 40).join("\n"));
+  assert.match(frame, /Update available: v1\.4\.0 \(running v1\.3\.1\)/);
+  assert.match(frame, /npx weeklygrant@latest/);
+  assert.deepEqual(handleKey(state, key("u")).actions, ["run-latest"]);
 });
 
 test("missing prices are reported only when no usage could be priced", () => {

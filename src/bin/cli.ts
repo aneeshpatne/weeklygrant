@@ -65,8 +65,8 @@ function printUsage(report) {
 async function main() {
   const parsed = parseArgs(args);
   const { command, estimate: estimateOptions } = parsed;
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
   if (command === "version") {
-    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
     console.log(pkg.version);
     return;
   }
@@ -76,7 +76,7 @@ async function main() {
   }
   if (command === "estimate" && process.stdout.isTTY && process.stdin.isTTY && !parsed.json) {
     const { runTui } = await import("./tui.js");
-    await runTui(estimateOptions);
+    await runTui(estimateOptions, pkg.version);
     return;
   }
   const report = await estimateCodexGrant(estimateOptions);

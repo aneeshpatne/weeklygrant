@@ -2,6 +2,10 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.4.0
+
+- Check npm for newer releases in the background while the interactive dashboard runs, and offer `u` to launch `npx weeklygrant@latest`.
+
 ## 1.3.1
 
 - Restore the optional quit-time thank-you screen with repository star reminder and persistent hide/open controls.

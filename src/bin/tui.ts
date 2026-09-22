@@ -5,6 +5,7 @@ import { hasGraphableSeries, isStableEstimate } from "../lib/codex-grant.js";
 import { lineChart, RESET_DOT, RESET_MARK } from "../lib/chart.js";
 import { dateFormat, moneyFormat, signedPercent } from "../lib/format.js";
 import { isStarNudgeHidden, persistHideStarNudge, REPO_URL } from "../lib/user-config.js";
+import { findLatestVersion } from "../lib/update-check.js";
 import {
   attach,
   box,
@@ -48,6 +49,8 @@ export type TuiState = {
   error: string | null;
   spinner: number;
   seconds: number;
+  currentVersion: string | null;
+  latestVersion: string | null;
 };
 
 function usd(value) {
@@ -75,8 +78,8 @@ export function withheldReason(report) {
   return "Need a more stable fit across measurements";
 }
 
-export function createState(): TuiState {
-  return { phase: "loading", report: null, error: null, spinner: 0, seconds: 0 };
+export function createState(currentVersion: string | null = null): TuiState {
+  return { phase: "loading", report: null, error: null, spinner: 0, seconds: 0, currentVersion, latestVersion: null };
 }
 
 export function visibleScreen(state: TuiState): TuiScreen {
@@ -138,6 +141,13 @@ export function renderFrame(state: TuiState, columns = 80, rows = Infinity) {
   if (columns < MIN_COLUMNS || rows < MIN_ROWS) return resizePrompt(columns, rows);
   const width = Math.max(1, columns - 2);
   const lines = renderScreen(state, visibleScreen(state), width);
+  if (state.latestVersion) {
+    lines.push(
+      "",
+      style(`Update available: v${state.latestVersion} (running v${state.currentVersion})`, { color: "yellow", bold: true }),
+      hint([["u", "run latest now"], ["next time", "npx weeklygrant@latest"]]),
+    );
+  }
   if (lines.length >= rows) return resizePrompt(columns, rows);
   return padX(lines.map((line) => padVisible(line, width).trimEnd()), 1);
 }
@@ -251,7 +261,11 @@ function renderDashboard(state: TuiState, width: number) {
   ];
 }
 
-export type TuiAction = "quit" | "retry" | "open-repo" | "hide-nudge";
+export type TuiAction = "quit" | "retry" | "open-repo" | "hide-nudge" | "run-latest";
+
+export function applyLatestVersion(state: TuiState, latestVersion: string | null): TuiState {
+  return { ...state, latestVersion };
+}
 
 export function applyReport(state: TuiState, report): TuiState {
   return { ...state, phase: "ready", report, error: null };
@@ -271,6 +285,7 @@ function tickLoading(state: TuiState, elapsedMs: number): TuiState {
 }
 
 export function handleKey(state: TuiState, key: TermKey): { state: TuiState; actions: TuiAction[] } {
+  if (key.input === "u" && state.latestVersion) return { state, actions: ["run-latest"] };
   if (state.phase === "leaving") {
     if (key.input === "n") return { state, actions: ["hide-nudge", "quit"] };
     if (key.input === "s") return { state, actions: ["open-repo"] };
@@ -321,8 +336,8 @@ function estimateInWorker(options): { worker: Worker; done: Promise<any> } {
   return { worker, done };
 }
 
-async function runSession(term: Terminal, options) {
-  let state = createState();
+async function runSession(term: Terminal, options, currentVersion: string): Promise<boolean> {
+  let state = createState(currentVersion);
   let generation = 0;
   let loadingStarted = Date.now();
   let activeWorker: Worker | null = null;
@@ -363,14 +378,20 @@ async function runSession(term: Terminal, options) {
     );
   };
 
-  return await new Promise<void>((resolve) => {
-    const finish = () => {
+  void findLatestVersion(currentVersion).then((latestVersion) => {
+    if (closed || !latestVersion) return;
+    state = applyLatestVersion(state, latestVersion);
+    paint();
+  });
+
+  return await new Promise<boolean>((resolve) => {
+    const finish = (runLatest = false) => {
       if (closed) return;
       closed = true;
       generation += 1;
       if (timer) clearTimeout(timer);
       activeWorker?.terminate();
-      resolve();
+      resolve(runLatest);
     };
     term.onKey((key) => {
       const next = handleKey(state, key);
@@ -378,6 +399,7 @@ async function runSession(term: Terminal, options) {
       paint();
       for (const action of next.actions) {
         if (action === "quit") finish();
+        if (action === "run-latest") finish(true);
         if (action === "retry") {
           generation += 1;
           load(generation);
@@ -396,11 +418,25 @@ async function runSession(term: Terminal, options) {
   });
 }
 
-export async function runTui(options) {
+function launchLatest(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const command = process.platform === "win32" ? "npx.cmd" : "npx";
+    const child = spawn(command, ["weeklygrant@latest"], { stdio: "inherit" });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`npx weeklygrant@latest exited with ${signal || `code ${code}`}`));
+    });
+  });
+}
+
+export async function runTui(options, currentVersion: string) {
   const term = attach();
+  let runLatest = false;
   try {
-    await runSession(term, options);
+    runLatest = await runSession(term, options, currentVersion);
   } finally {
     term.detach();
   }
+  if (runLatest) await launchLatest();
 }

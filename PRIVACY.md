@@ -1,6 +1,6 @@
 # Privacy
 
-Last updated: August 20, 2026.
+Last updated: September 22, 2026.
 
 weeklygrant is a local command-line tool. It reads Codex JSONL session files from
 `CODEX_HOME`, `~/.codex`, or a path explicitly supplied with `--home`. It uses
@@ -25,8 +25,13 @@ observations to calculate a local estimate.
 
 ## Network request
 
-weeklygrant makes no network request by default. If `--refresh-prices` is used,
-it sends a GET request to `https://models.dev/api.json` to retrieve public model pricing. The request does
+In an interactive terminal, weeklygrant requests the public
+`https://registry.npmjs.org/weeklygrant/latest` package metadata in the background
+to check whether a newer version is available. It sends no session contents,
+usage data, or local paths. A failed or slow request is silently ignored.
+
+If `--refresh-prices` is used, weeklygrant also sends a GET request to
+`https://models.dev/api.json` to retrieve public model pricing. The request does
 not include session contents, token counts, quota observations, local paths, or
 calculated results. As with any network request, the destination and intervening
 infrastructure may observe ordinary connection metadata such as an IP address,
