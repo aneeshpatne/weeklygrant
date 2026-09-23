@@ -88,6 +88,8 @@ const OFFICIAL_CARDS: Record<string, RateCard> = {
   "codex-auto-review": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04), 2.5),
   "gpt-5.6-terra": card(2, 12, 0.2, tier(4, 18, 0.4), 2.5),
   "gpt-6-astra": card(10, 50, 1, tier(20, 75, 2), 2),
+  "gpt-6-sol": card(2, 10, 0.2, tier(4, 15, 0.4), 2),
+  "gpt-6-luna": card(0.1, 0.5, 0.01, tier(0.2, 0.75, 0.02), 2),
 };
 
 const OFFICIAL_FAMILIES = Object.keys(OFFICIAL_CARDS).sort((a, b) => b.length - a.length);

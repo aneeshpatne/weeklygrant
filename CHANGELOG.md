@@ -2,6 +2,10 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Added bundled official pricing for `gpt-6-sol` (short-context $2 / $10, long-context $4 / $15, Fast 2x) and `gpt-6-luna` (short-context $0.10 / $0.50, long-context $0.20 / $0.75, Fast 2x).
+
 ## 1.4.0
 
 - Check npm for newer releases in the background while the interactive dashboard runs, and offer `u` to launch `npx weeklygrant@latest`.

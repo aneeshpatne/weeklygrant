@@ -429,6 +429,20 @@ test("official GPT-6 Astra pricing includes long context and Fast mode", () => {
   assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 122);
 });
 
+test("official GPT-6 Sol pricing includes long context and Fast mode", () => {
+  const base = { model: "gpt-6-sol", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 1 }).costUsd, 12.2);
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 19.4);
+  assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 24.4);
+});
+
+test("official GPT-6 Luna pricing includes long context and Fast mode", () => {
+  const base = { model: "gpt-6-luna", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 1 }).costUsd, 0.61);
+  assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 0.97);
+  assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 1.22);
+});
+
 test("price refresh fills unknown cards without overriding bundled official cards", async () => {
   const cards = await loadRateCards(async () => ({
     ok: true,
