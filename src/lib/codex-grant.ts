@@ -90,6 +90,7 @@ const OFFICIAL_CARDS: Record<string, RateCard> = {
   "gpt-6-astra": card(10, 50, 1, tier(20, 75, 2), 2),
   "gpt-6-sol": card(2, 10, 0.2, tier(4, 15, 0.4), 2),
   "gpt-6-luna": card(0.1, 0.5, 0.01, tier(0.2, 0.75, 0.02), 2),
+  "gpt-reserve": card(0.1, 0.5, 0.01, tier(0.2, 0.75, 0.02), 2),
 };
 
 const OFFICIAL_FAMILIES = Object.keys(OFFICIAL_CARDS).sort((a, b) => b.length - a.length);
@@ -672,6 +673,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
     let anchorCost = costInWindow(lanes, first.timestampMs, anchor.timestampMs, first.limitId);
     const candidates: any[] = [];
     const timeline: any[] = [];
+    let pricingBlockedPairs = 0;
     for (let index = 1; index < epoch.length; index++) {
       const current = epoch[index];
       const currentCost = costInWindow(lanes, first.timestampMs, current.timestampMs, first.limitId);
@@ -680,6 +682,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
       const pending = costInWindow(pendingLanes, anchor.timestampMs, current.timestampMs, first.limitId);
       let decision = "pending";
       let weekUsd: number | null = null;
+      if (pending > 0 && percentDelta >= MIN_PERCENT_DELTA) pricingBlockedPairs += 1;
       if (pending > 0 || ![costDelta, percentDelta].every(Number.isFinite) || percentDelta < -0.01) decision = "rejected";
       else if (costDelta > 0 && percentDelta >= MIN_PERCENT_DELTA) {
         weekUsd = costDelta / (percentDelta / 100);
@@ -740,6 +743,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
       matchedCoveragePoints: matchedPercent,
       observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId),
       outlierPairs: candidates.length - inlierRates.length,
+      pricingBlockedPairs,
     };
     if (isNewerGrantEpoch(epoch, active)) active = next;
   });
@@ -761,6 +765,8 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
     outlierPairs: active?.outlierPairs ?? 0,
     pricedEvents,
     pendingEvents,
+    pricingBlockedPairs: active?.pricingBlockedPairs ?? 0,
+    pendingModels: [...new Set(events.filter((event) => !event.eligible).map((event) => normalizeModel(event.model) || "unknown"))].sort(),
     resetsAtMs: latest?.resetsAtMs ?? null,
     planType: latest?.planType ?? null,
     series: bucketSeries(series, MAX_SERIES_POINTS),

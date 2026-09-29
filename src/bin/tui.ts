@@ -71,6 +71,10 @@ export function withheldReason(report) {
   if (report.pricedEvents === 0 && report.pendingEvents > 0) return "Usage has missing prices; try --refresh-prices";
   if (report.weeklyUsedPercent == null) return "No weekly quota observations found in the scanned logs";
   const needsPairs = Math.max(0, 2 - report.validPairs);
+  if (needsPairs > 0 && report.pricingBlockedPairs > 0) {
+    const models = report.pendingModels?.length ? ` (${report.pendingModels.join(", ")})` : "";
+    return `${report.pricingBlockedPairs} measurement${report.pricingBlockedPairs === 1 ? " was" : "s were"} skipped for models without prices${models}; update weeklygrant or try --refresh-prices`;
+  }
   const coverage = Number.isFinite(report.matchedCoveragePoints) ? report.matchedCoveragePoints : report.coveragePoints;
   const needsCoverage = Math.max(0, 5 - coverage);
   if (needsPairs > 0) return `Need at least ${needsPairs} more valid measurement${needsPairs === 1 ? "" : "s"}`;

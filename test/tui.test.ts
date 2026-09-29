@@ -106,7 +106,7 @@ test("an available update is shown and can launch the latest version", () => {
   assert.deepEqual(handleKey(state, key("u")).actions, ["run-latest"]);
 });
 
-test("missing prices are reported only when no usage could be priced", () => {
+test("missing prices are reported when no usage or no measurement could be priced", () => {
   assert.match(
     withheldReason(report({ pricedEvents: 0, pendingEvents: 12, validPairs: 0, weeklyUsedPercent: 0 })),
     /missing prices/,
@@ -114,6 +114,10 @@ test("missing prices are reported only when no usage could be priced", () => {
   assert.match(
     withheldReason(report({ pricedEvents: 100, pendingEvents: 12, validPairs: 0, weeklyUsedPercent: 0, coveragePoints: 0 })),
     /more valid measurement/,
+  );
+  assert.match(
+    withheldReason(report({ pricedEvents: 100, pendingEvents: 12, validPairs: 0, pricingBlockedPairs: 3, pendingModels: ["gpt-7"], weeklyUsedPercent: 42 })),
+    /3 measurements were skipped for models without prices \(gpt-7\)/,
   );
 });
 

@@ -105,6 +105,18 @@ test("refresh cannot replace official pricing for dated model snapshots", async 
   assert.equal(cards.invalid, undefined);
 });
 
+test("windows containing unpriced usage are counted and the models named", () => {
+  const result = estimateGrantFromLogs([
+    pricedEvent(1500, 1),
+    { ...pricedEvent(1600, 0), model: "gpt-7", eligible: false },
+    pricedEvent(2500, 1),
+    { ...pricedEvent(2600, 0), model: "gpt-7", eligible: false },
+  ], [observation(1000, 0), observation(2000, 1), observation(3000, 2)]);
+  assert.equal(result.validPairs, 0);
+  assert.equal(result.pricingBlockedPairs, 2);
+  assert.deepEqual(result.pendingModels, ["gpt-7"]);
+});
+
 test("latest observation selects the active stream, not its epoch start", () => {
   const other = (time, used) => ({ ...observation(time, used), limitId: "other" });
   const result = estimateGrantFromLogs([
@@ -408,6 +420,18 @@ test("official GPT-5.6 Sol pricing includes long context and Codex Fast mode", (
   const base = { model: "gpt-5.6-sol", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
   assert.equal(priceTokens({ ...base, serviceTier: "standard", requestInputTokens: 2_000_000 }).costUsd, 38.8);
   assert.equal(priceTokens({ ...base, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 61);
+});
+
+test("gpt-reserve uses official GPT-6 Luna rates", () => {
+  const luna = { model: "gpt-6-luna", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  for (const serviceTier of ["standard", "fast"]) {
+    for (const requestInputTokens of [1, 2_000_000]) {
+      const event = { ...luna, serviceTier, requestInputTokens };
+      const reserve = priceTokens({ ...event, model: "gpt-reserve" });
+      assert.equal(reserve.eligible, true);
+      assert.equal(reserve.costUsd, priceTokens(event).costUsd);
+    }
+  }
 });
 
 test("codex-auto-review uses official GPT-5.6 Luna rates", () => {
