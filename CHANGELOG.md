@@ -2,6 +2,11 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.4.2
+
+- Price `gpt-reserve` at official GPT-6 Luna rates, including long context and Fast mode.
+- When unpriced usage causes weekly measurements to be skipped, name the models and suggest updating or `--refresh-prices` instead of asking for more measurements.
+
 ## 1.4.1
 
 - Added bundled official pricing for `gpt-6-sol` (short-context $2 / $10, long-context $4 / $15, Fast 2x) and `gpt-6-luna` (short-context $0.10 / $0.50, long-context $0.20 / $0.75, Fast 2x).
