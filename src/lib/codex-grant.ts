@@ -35,6 +35,7 @@ type RateCard = {
   cacheRead: number;
   tiers: RateTier[];
   fastMultiplier?: number;
+  ultrafastMultiplier?: number;
   source?: "official" | "models_dev";
 };
 
@@ -87,7 +88,8 @@ const OFFICIAL_CARDS: Record<string, RateCard> = {
   "gpt-5.6-luna": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04), 2.5),
   "codex-auto-review": card(0.2, 1.2, 0.02, tier(0.4, 1.8, 0.04), 2.5),
   "gpt-5.6-terra": card(2, 12, 0.2, tier(4, 18, 0.4), 2.5),
-  "gpt-6-astra": card(10, 50, 1, tier(20, 75, 2), 2),
+  "gpt-6-astra": card(10, 50, 1, tier(20, 75, 2), 2, 6),
+  "gpt-6.1-sol": card(2, 10, 0.1, tier(4, 15, 0.2), 2),
   "gpt-6-sol": card(2, 10, 0.2, tier(4, 15, 0.4), 2),
   "gpt-6-luna": card(0.1, 0.5, 0.01, tier(0.2, 0.75, 0.02), 2),
   "gpt-reserve": card(0.1, 0.5, 0.01, tier(0.2, 0.75, 0.02), 2),
@@ -96,8 +98,8 @@ const OFFICIAL_CARDS: Record<string, RateCard> = {
 const OFFICIAL_FAMILIES = Object.keys(OFFICIAL_CARDS).sort((a, b) => b.length - a.length);
 const EMPTY_LANE: CostLane = { times: [], prefix: [0] };
 
-function card(input: number, output: number, cacheRead: number, longTier: RateTier | null = null, fastMultiplier?: number): RateCard {
-  return { input, output, cacheRead, tiers: longTier ? [longTier] : [], ...(fastMultiplier ? { fastMultiplier } : {}) };
+function card(input: number, output: number, cacheRead: number, longTier: RateTier | null = null, fastMultiplier?: number, ultrafastMultiplier?: number): RateCard {
+  return { input, output, cacheRead, tiers: longTier ? [longTier] : [], ...(fastMultiplier ? { fastMultiplier } : {}), ...(ultrafastMultiplier ? { ultrafastMultiplier } : {}) };
 }
 
 function tier(input: number, output: number, cacheRead: number): RateTier {
@@ -156,9 +158,10 @@ export function priceTokens(event, cards = OFFICIAL_CARDS) {
     + number(event.cachedInput) * active.cacheRead
     + number(event.billedOutput) * active.output
   ) / 1_000_000;
-  if (event.serviceTier === "fast") {
-    if (!rate.fastMultiplier) return { ...event, costUsd: 0, eligible: false, pricingStatus: "pending" };
-    costUsd *= rate.fastMultiplier;
+  if (event.serviceTier === "fast" || event.serviceTier === "ultrafast") {
+    const multiplier = event.serviceTier === "ultrafast" ? rate.ultrafastMultiplier : rate.fastMultiplier;
+    if (!multiplier) return { ...event, costUsd: 0, eligible: false, pricingStatus: "pending" };
+    costUsd *= multiplier;
   }
   return { ...event, costUsd, eligible: true, pricingStatus: active.source || rate.source || "official" };
 }
@@ -384,6 +387,7 @@ export function parseLogFile(file, mtimeMs?: number, size?: number, includeQuota
       model = payload.model ?? payload.model_id ?? object.model ?? model;
       const rawTier = String(payload.service_tier ?? payload.serviceTier ?? object.service_tier ?? "").toLowerCase();
       if (rawTier === "priority" || rawTier === "fast") serviceTier = "fast";
+      else if (rawTier === "ultrafast") serviceTier = "ultrafast";
       else if (rawTier === "default" || rawTier === "standard") serviceTier = "standard";
       else if (["service_tier", "serviceTier"].some((key) => Object.hasOwn(payload, key) || Object.hasOwn(object, key))) serviceTier = "standard";
       continue;

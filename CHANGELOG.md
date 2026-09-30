@@ -2,6 +2,12 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Add official GPT-6.1 Sol pricing, including cached input, long context, and Fast mode.
+- Recognize Ultrafast usage and price GPT-6 Astra at 6x Standard; leave models without published Ultrafast rates pending.
+- Pricing source: https://developers.openai.com/api/docs/pricing?latest-pricing=ultrafast (2026-09-30).
+
 ## 1.4.2
 
 - Price `gpt-reserve` at official GPT-6 Luna rates, including long context and Fast mode.

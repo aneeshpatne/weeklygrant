@@ -714,3 +714,39 @@ test("estimateCodexGrant summarizes models only when requested", async () => {
   assert.equal(summary.algorithm, undefined);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+
+test("GPT-6.1 Sol prices standard, Fast, long context, and dated snapshots", () => {
+  const base = { model: "gpt-6.1-sol", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  for (const model of [base.model, "gpt-6.1-sol-2026-09-30"]) {
+    assert.equal(priceTokens({ ...base, model, requestInputTokens: 1 }).costUsd, 12.1);
+    assert.equal(priceTokens({ ...base, model, requestInputTokens: 2_000_000 }).costUsd, 19.2);
+    assert.equal(priceTokens({ ...base, model, serviceTier: "fast", requestInputTokens: 1 }).costUsd, 24.2);
+    assert.equal(priceTokens({ ...base, model, serviceTier: "fast", requestInputTokens: 2_000_000 }).costUsd, 38.4);
+  }
+});
+
+test("Ultrafast prices Astra at six times standard and leaves unpublished rates pending", () => {
+  const base = { model: "gpt-6-astra", serviceTier: "ultrafast", uncachedInput: 1_000_000, cachedInput: 1_000_000, billedOutput: 1_000_000 };
+  assert.equal(priceTokens({ ...base, requestInputTokens: 1 }).costUsd, 366);
+  assert.equal(priceTokens({ ...base, requestInputTokens: 2_000_000 }).costUsd, 582);
+  for (const model of ["gpt-6.1-sol", "gpt-5.6-sol", "gpt-6-luna"]) {
+    assert.equal(priceTokens({ ...base, model }).eligible, false);
+    assert.equal(priceTokens({ ...base, model }).pricingStatus, "pending");
+  }
+});
+
+test("log parsing preserves Ultrafast through usage and resets it when cleared", async () => {
+  await withLog([
+    { type: "turn_context", payload: { model: "gpt-6-astra", service_tier: "ultrafast" } },
+    counter(1000, 100),
+    { type: "turn_context", payload: { model: "gpt-6-astra" } },
+    counter(1001, 200),
+    { type: "turn_context", payload: { model: "gpt-6-astra", service_tier: null } },
+    counter(1002, 300),
+  ], (file) => {
+    const events = parseLogFile(file).events;
+    assert.deepEqual(events.map((event) => event.serviceTier), ["ultrafast", "ultrafast", "standard"]);
+    assert.equal(priceTokens(events[0]).costUsd, 0.006);
+  });
+});
