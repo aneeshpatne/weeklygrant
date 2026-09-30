@@ -2,7 +2,7 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.4.3
 
 - Add official GPT-6.1 Sol pricing, including cached input, long context, and Fast mode.
 - Recognize Ultrafast usage and price GPT-6 Astra at 6x Standard; leave models without published Ultrafast rates pending.
