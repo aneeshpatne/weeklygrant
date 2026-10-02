@@ -133,26 +133,34 @@ function centerText(text: string, width: number) {
   return `${" ".repeat(Math.floor((width - text.length) / 2))}${text}`;
 }
 
-function resizePrompt(columns: number, rows: number) {
+function resizePrompt(columns: number, rows: number, requiredRows = MIN_ROWS) {
   const width = Math.max(1, columns - 2);
   return padX([
     style("Expand terminal size to view weeklygrant", { color: "yellow", bold: true }),
-    style(`Current ${columns}×${rows} · minimum ${MIN_COLUMNS}×${MIN_ROWS}`, { dim: true }),
+    style(`Current ${columns}×${rows} · minimum ${MIN_COLUMNS}×${requiredRows}`, { dim: true }),
   ].map((line) => padVisible(line, width).trimEnd()), 1);
 }
 
 export function renderFrame(state: TuiState, columns = 80, rows = Infinity) {
   if (columns < MIN_COLUMNS || rows < MIN_ROWS) return resizePrompt(columns, rows);
   const width = Math.max(1, columns - 2);
-  const lines = renderScreen(state, visibleScreen(state), width);
-  if (state.latestVersion) {
-    lines.push(
-      "",
-      style(`Update available: v${state.latestVersion} (running v${state.currentVersion})`, { color: "yellow", bold: true }),
-      hint([["u", "run latest now"], ["next time", "npx weeklygrant@latest"]]),
-    );
+  const screen = visibleScreen(state);
+  const withUpdate = (lines: string[], compact = false) => {
+    if (state.latestVersion) {
+      lines.push(
+        ...(!compact ? [""] : []),
+        style(`Update available: v${state.latestVersion} (running v${state.currentVersion})`, { color: "yellow", bold: true }),
+        hint([["u", "run latest now"], ["next time", "npx weeklygrant@latest"]]),
+      );
+    }
+    return lines;
+  };
+  let lines = withUpdate(renderScreen(state, screen, width));
+  if (lines.length >= rows && screen === "dashboard") {
+    lines = withUpdate(renderDashboard(state, width, true), true);
   }
-  if (lines.length >= rows) return resizePrompt(columns, rows);
+  // Leave the final terminal row empty to prevent scrolling on redraw.
+  if (lines.length >= rows) return resizePrompt(columns, rows, Math.max(MIN_ROWS, lines.length + 1));
   return padX(lines.map((line) => padVisible(line, width).trimEnd()), 1);
 }
 
@@ -218,7 +226,7 @@ function renderScreen(state: TuiState, screen: TuiScreen, width: number): string
   return renderDashboard(state, width);
 }
 
-function renderDashboard(state: TuiState, width: number) {
+function renderDashboard(state: TuiState, width: number, compact = false) {
   const report = state.report;
   const estimateReady = isStableEstimate(report.confidence);
   const points = report.series || [];
@@ -226,7 +234,7 @@ function renderDashboard(state: TuiState, width: number) {
   const chartWidth = Math.min(96, Math.max(20, width - 16));
   const chart = lineChart(points, "valueUsd", chartWidth, 7, "$");
   const panelWidth = Math.min(width, chartWidth + 16);
-  const cards = wrapCards([
+  const cardContents = [
     statCard("Estimated weekly API value", usd(report.headlineUsd), estimateReady ? "green" : "yellow"),
     statCard("Weekly quota", report.weeklyUsedPercent == null ? "—" : `${report.weeklyUsedPercent.toFixed(1)}% used`, "cyan"),
     statCard("Resets", relativeTime(report.resetsAtMs)),
@@ -234,14 +242,17 @@ function renderDashboard(state: TuiState, width: number) {
       historyCard("Vs scanned peak", report.history.vsPeakPercent, report.history.peakUsd),
       historyCard("Vs scanned average", report.history.vsAveragePercent, report.history.averageUsd),
     ] : []),
-  ], width, 1, { style: "round", borderColor: "gray", paddingX: 1, width: STAT_WIDTH });
+  ];
+  const cards = compact
+    ? cardContents.map((content) => content.join(" "))
+    : wrapCards(cardContents, width, 1, { style: "round", borderColor: "gray", paddingX: 1, width: STAT_WIDTH });
   const panelInner = Math.max(12, panelWidth - 4);
   const chartFooter = spaceBetween(
     style(dateFormat.format(points[0]?.timestampMs || Date.now()), { dim: true }),
     style(`${points.length} measurements${epochCount > 1 ? ` · ${RESET_MARK} reset` : ""} · now`, { dim: true }),
     panelInner,
   );
-  return [
+  const lines = [
     spaceBetween(
       style("weeklygrant", { bold: true, color: "cyan" }),
       style(`${String(report.confidence).toUpperCase()} confidence`, { color: estimateReady ? "green" : "yellow" }),
@@ -263,6 +274,7 @@ function renderDashboard(state: TuiState, width: number) {
     hint([["r", "rescan"], ["q", "quit"]]),
     style("API-equivalent planning estimate — not a Codex bill or credit balance.", { dim: true }),
   ];
+  return compact ? lines.filter((line) => line !== "") : lines;
 }
 
 export type TuiAction = "quit" | "retry" | "open-repo" | "hide-nudge" | "run-latest";

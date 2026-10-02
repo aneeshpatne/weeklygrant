@@ -2,6 +2,11 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.4.4
+
+- Fit dashboards with historical comparisons and update notices into supported terminals, including 120×30 and 72×28, using compact stats when needed.
+- Report the actual required height if a screen still needs more rows.
+
 ## 1.4.3
 
 - Add official GPT-6.1 Sol pricing, including cached input, long context, and Fast mode.

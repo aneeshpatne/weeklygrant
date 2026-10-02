@@ -132,6 +132,37 @@ test("small terminals show only a resize prompt", () => {
   }
 });
 
+test("dashboard fits supported terminal sizes with history and update notices", () => {
+  for (const confidence of ["high", "low"]) {
+    for (const comparableWeeks of [0, 6]) {
+      for (const latestVersion of [null, "1.4.5"]) {
+        const state = applyLatestVersion(applyReport(createState("1.4.4"), report({
+          confidence,
+          history: { peakUsd: 100, averageUsd: 80, comparableWeeks, vsPeakPercent: -40, vsAveragePercent: -25 },
+        })), latestVersion);
+        for (const [columns, rows] of [[72, 28], [80, 28], [120, 30], [120, 40]]) {
+          const lines = renderFrame(state, columns, rows);
+          const frame = stripAnsi(lines.join("\n"));
+          assert.ok(lines.length < rows, `${columns}×${rows} must leave room for redraw`);
+          assert.ok(lines.every((line) => visibleWidth(line) < columns));
+          assert.doesNotMatch(frame, /Expand terminal size/);
+          assert.match(frame, /Estimated weekly API/);
+          assert.match(frame, /\$42\.00/);
+          assert.match(frame, /Estimated grant history/);
+          assert.match(frame, /Observed spend/);
+          assert.match(frame, /rescan/);
+          if (confidence === "high" && comparableWeeks >= 2) {
+            assert.match(frame, /Vs scanned peak/);
+            assert.match(frame, /Vs scanned average/);
+          }
+          if (confidence === "low") assert.match(frame, /Early estimate/);
+          if (latestVersion) assert.match(frame, /Update available/);
+        }
+      }
+    }
+  }
+});
+
 test("dashboard keeps one grant graph and historical percentage comparisons", () => {
   const state = applyReport(createState(), report({
     history: {
