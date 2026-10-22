@@ -33,7 +33,8 @@ When no dollar estimate is possible, measured quota and cost remain available.
 The dashboard explains whether logs, quota movement, prices, or a more stable
 fit are missing. Missing prices are not treated as free usage: affected intervals
 are excluded from estimation. Local logs cannot account for usage on other
-devices or provide a complete account-wide bill.
+devices or provide a complete account-wide bill. When several accounts share a
+Codex home, only the most recently used one is estimated.
 
 The dashboard shows one grant-history graph, reset timing, observed cost,
 confidence, and peak/average percentage comparisons. Comparisons require at

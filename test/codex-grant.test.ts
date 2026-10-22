@@ -181,6 +181,102 @@ test("gpt-reserve rate limits do not move weekly quota or retag grant usage", as
   }));
 });
 
+test("accounts sharing a Codex home keep separate quota and cost", () => {
+  const a = (time, used) => ({ ...observation(time, used), accountKey: "acct-a" });
+  const b = (time, used) => ({ ...observation(time, used), accountKey: "acct-b" });
+  const result = estimateGrantFromLogs([
+    { ...pricedEvent(1500, 1), accountKey: "acct-a" },
+    { ...pricedEvent(1600, 5), accountKey: "acct-b" },
+    { ...pricedEvent(2500, 1), accountKey: "acct-a" },
+    { ...pricedEvent(2600, 5), accountKey: "acct-b" },
+  ], [a(1000, 10), b(1100, 60), a(2000, 12), b(2100, 61), a(3000, 14), b(3100, 62)]);
+  assert.equal(result.accountsSeen, 2);
+  assert.equal(result.headlineUsd, 500);
+  assert.equal(result.weeklyUsedPercent, 62);
+  assert.ok(result.series.every((point) => point.usedPercent >= 60));
+});
+
+test("session account ids tag parsed quota and usage", () => withLog([
+  { type: "session_meta", payload: { id: "s1", creator_account_id: "acct-a" } },
+  {
+    type: "event_msg",
+    timestamp: 1_000,
+    payload: {
+      type: "token_count",
+      info: { total_token_usage: { input_tokens: 100, cached_input_tokens: 0, output_tokens: 0 } },
+      rate_limits: { limit_id: "codex", primary: { window_minutes: 10_080, used_percent: 5, resets_at: 80_000 } },
+    },
+  },
+], (file) => {
+  const parsed = parseLogFile(file);
+  assert.equal(parsed.observations[0].accountKey, "acct-a");
+  assert.equal(parsed.events[0].accountKey, "acct-a");
+}));
+
+function withHome(sessions, run) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "weeklygrant-accounts-"));
+  fs.mkdirSync(path.join(root, "sessions"));
+  const files = Object.entries(sessions).map(([name, lines]) => {
+    const file = path.join(root, "sessions", `${name}.jsonl`);
+    fs.writeFileSync(file, (lines as any[]).map((line) => JSON.stringify(line)).join("\n"));
+    return file;
+  });
+  return Promise.resolve().then(() => run(root, files)).finally(() => fs.rmSync(root, { recursive: true, force: true }));
+}
+
+const meta = (id, account) => ({ type: "session_meta", payload: { id, creator_account_id: account } });
+const quotaCount = (timestamp, input, plan, used, resetsAt, weeklyOnly = false) => {
+  const weekly = { window_minutes: 10_080, used_percent: used, resets_at: resetsAt };
+  return counter(timestamp, input, { rate_limits: { limit_id: "codex", plan_type: plan, ...(weeklyOnly ? { primary: weekly } : { primary: { window_minutes: 300, used_percent: 0 }, secondary: weekly }) } });
+};
+
+test("an account switch inside one session moves later quota and usage to the matching account", () => withHome({
+  switched: [
+    meta("s1", "pro"),
+    { type: "turn_context", payload: { model: "gpt-5.2-codex" } },
+    quotaCount(1_000, 100_000, "prolite", 1, 103_600, true),
+    quotaCount(3_000, 100_000, "plus", 10, 100_000),
+    quotaCount(4_000, 500_000, "plus", 11, 100_000),
+    quotaCount(5_000, 900_000, "plus", 12, 100_000),
+  ],
+  plus: [
+    meta("s2", "plus"),
+    { type: "turn_context", payload: { model: "gpt-5.2-codex" } },
+    quotaCount(2_000, 0, "plus", 10, 100_000),
+    quotaCount(6_000, 400_000, "plus", 13, 100_000),
+  ],
+}, async (root, [switchedFile, plusFile]) => {
+  assert.deepEqual(parseLogFile(switchedFile).observations.map((item) => item.switched), [false, true, true, true]);
+  assert.deepEqual(parseLogFile(plusFile).observations.map((item) => item.switched), [false, false]);
+  const report = await estimateCodexGrant({ home: root, days: Infinity });
+  assert.equal(report.accountsSeen, 2);
+  assert.equal(report.planType, "plus");
+  assert.equal(report.weeklyUsedPercent, 13);
+  assert.equal(report.validPairs, 3);
+  assert.equal(Math.round(report.headlineUsd), 70);
+}));
+
+test("synced resets after a global reset still separate accounts by used percent", () => withHome({
+  a: [
+    meta("a", "acct-a"),
+    quotaCount(1_000, 0, "plus", 50, 50_000),
+    quotaCount(2_000, 0, "plus", 10, 900_000),
+    quotaCount(4_000, 0, "plus", 1, 900_000),
+    quotaCount(6_000, 0, "plus", 2, 900_000),
+  ],
+  b: [
+    meta("b", "acct-b"),
+    quotaCount(3_000, 0, "plus", 0, 900_000),
+    quotaCount(7_000, 0, "plus", 3, 900_000),
+  ],
+}, async (root, [fileA]) => {
+  assert.deepEqual(parseLogFile(fileA).observations.map((item) => item.switched), [false, false, true, true]);
+  const report = await estimateCodexGrant({ home: root, days: Infinity });
+  assert.equal(report.accountsSeen, 2);
+  assert.equal(report.weeklyUsedPercent, 3);
+  assert.deepEqual(report.series.map((point) => point.usedPercent), [1, 2, 3]);
+}));
+
 test("unpriced usage excludes an incomplete interval from the fit", () => {
   const result = estimateGrantFromLogs([
     pricedEvent(1500, 0.5),

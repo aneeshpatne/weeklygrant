@@ -2,6 +2,11 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.4.5
+
+- Keep quota and cost separate for each account sharing a Codex home, and estimate the most recently used account instead of mixing their streams into one graph.
+- Detect account switches inside a session from its quota stream and move later usage to the account it matches, including after global resets that sync reset times.
+
 ## 1.4.4
 
 - Fit dashboards with historical comparisons and update notices into supported terminals, including 120×30 and 72×28, using compact stats when needed.

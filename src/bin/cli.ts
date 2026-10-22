@@ -93,6 +93,7 @@ async function main() {
   const basis = Number.isFinite(report.matchedCoveragePoints) ? report.matchedCoveragePoints : report.coveragePoints;
   console.log(`${report.label} · ${report.confidence} confidence · based on ${basis.toFixed(1)} quota points`);
   if (report.weeklyUsedPercent != null) console.log(`Quota used: ${report.weeklyUsedPercent.toFixed(1)}%`);
+  if (report.accountsSeen > 1) console.log(`Showing the latest of ${report.accountsSeen} accounts`);
   console.log(`Observed spend: ${money(report.observedTokenCostUsd)} · Current signal: ${money(report.rawUsd)}`);
   if (report.history?.comparableWeeks >= 2) {
     const vsPeak = signedPercent(report.history.vsPeakPercent) || "n/a";

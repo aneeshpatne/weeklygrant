@@ -9,6 +9,7 @@ const WEEKLY_TOLERANCE = 240;
 const PRIMARY_WINDOW_MINUTES = 300;
 const PRIMARY_WINDOW_TOLERANCE = 30;
 const RESET_JITTER_MS = 2 * 60 * 60 * 1000;
+const WINDOW_JITTER_MS = 5 * 60 * 1000;
 const RESET_DROP_POINTS = 12;
 const HARD_RESET_DROP = 25;
 const MIN_PERCENT_DELTA = 0.5;
@@ -45,8 +46,7 @@ type CostLane = {
 };
 
 type CostLanes = {
-  unassigned: CostLane;
-  byLimit: Map<string, CostLane>;
+  byKey: Map<string, CostLane>;
   includeUnassigned: boolean;
 };
 
@@ -216,7 +216,7 @@ function isAuxiliaryQuota(rateLimits) {
   return id === "base_model_inference" || name === "gpt-reserve";
 }
 
-function weeklyObservation(rateLimits, timestamp, sessionId) {
+function weeklyObservation(rateLimits, timestamp, sessionId, accountKey) {
   if (!rateLimits || typeof rateLimits !== "object" || isAuxiliaryQuota(rateLimits)) return null;
   const windows = [rateLimits.primary, rateLimits.secondary].filter(Boolean).map((window) => ({
     window,
@@ -234,10 +234,25 @@ function weeklyObservation(rateLimits, timestamp, sessionId) {
     resetsAtMs: timestampMs(candidate.window.resets_at ?? candidate.window.resetsAt),
     limitId: String(rateLimits.limit_id ?? rateLimits.limitId ?? "codex"),
     planType: rateLimits.plan_type ?? rateLimits.planType ?? null,
-    accountKey: "local",
+    accountKey,
     sessionId,
     paired,
+    switched: false,
   };
+}
+
+function sameWindow(a, b) {
+  return (!a.planType || !b.planType || a.planType === b.planType)
+    && (a.resetsAtMs == null || b.resetsAtMs == null || Math.abs(a.resetsAtMs - b.resetsAtMs) <= WINDOW_JITTER_MS);
+}
+
+// Codex can change accounts inside a session without logging it; only the quota stream shows it.
+function accountChanged(previous, current) {
+  if (previous.planType && current.planType && previous.planType !== current.planType) return true;
+  if (previous.resetsAtMs == null || current.resetsAtMs == null) return false;
+  const shift = current.resetsAtMs - previous.resetsAtMs;
+  if (Math.abs(shift) <= WINDOW_JITTER_MS) return current.usedPercent < previous.usedPercent - 1;
+  return shift < 0 || (current.usedPercent > previous.usedPercent && current.timestampMs < previous.resetsAtMs - RESET_JITTER_MS);
 }
 
 function typeFromPrefix(head: string) {
@@ -366,7 +381,10 @@ export function parseLogFile(file, mtimeMs?: number, size?: number, includeQuota
   let sessionId = path.basename(file, ".jsonl");
   let model = "";
   let serviceTier = "standard";
-  let lastLimitId: string | null = null;
+  let account = "local";
+  let switched = false;
+  let lastQuota: any = null;
+  const sessionQuota = new Map();
   let previous = { uncachedInput: 0, cachedInput: 0, billedOutput: 0, reasoning: 0 };
   const events: any[] = [];
   const observations: any[] = [];
@@ -381,6 +399,7 @@ export function parseLogFile(file, mtimeMs?: number, size?: number, includeQuota
     const type = object.type === "event_msg" ? payload.type : object.type;
     if (type === "session_meta") {
       sessionId = String(payload.id ?? payload.session_id ?? object.id ?? object.session_id ?? sessionId);
+      account = [payload.creator_account_id ?? payload.creatorAccountId, payload.creator_user_id ?? payload.creatorUserId].filter(Boolean).join("/") || account;
       continue;
     }
     if (type === "turn_context" || type === "thread_settings_applied" || type === "threadSettings") {
@@ -396,10 +415,14 @@ export function parseLogFile(file, mtimeMs?: number, size?: number, includeQuota
     const at = timestampMs(object.timestamp ?? payload.timestamp) ?? fileMtime;
     if (includeQuota) {
       const rateLimits = payload.rate_limits ?? payload.rateLimits ?? object.rate_limits ?? object.rateLimits;
-      const quota = weeklyObservation(rateLimits, at, sessionId);
+      const quota = weeklyObservation(rateLimits, at, sessionId, account);
       if (quota) {
+        const prior = sessionQuota.get(quota.limitId);
+        switched ||= Boolean(prior && accountChanged(prior, quota));
+        quota.switched = switched;
+        sessionQuota.set(quota.limitId, quota);
         observations.push(quota);
-        lastLimitId = quota.limitId;
+        lastQuota = quota;
       }
     }
     const info = payload.info ?? object.info ?? {};
@@ -449,7 +472,9 @@ export function parseLogFile(file, mtimeMs?: number, size?: number, includeQuota
         model,
         serviceTier,
         sessionId,
-        quotaLimitId: lastLimitId,
+        accountKey: lastQuota?.accountKey ?? account,
+        quota: lastQuota,
+        quotaLimitId: lastQuota?.limitId ?? null,
         requestInputTokens: Number.isFinite(requestInput) ? requestInput : null,
         counterReset,
       });
@@ -479,10 +504,43 @@ function walkJsonl(root, cutoff, output: JsonlFile[] = [], diagnostics: ScanDiag
   return output;
 }
 
+// After a switch, a session's quota belongs to whichever account's trusted readings it continues:
+// same plan and window, with used percent between that account's readings before and after it.
+// Without such evidence, or when the creator still fits, it stays with the session's creator.
+function resolveAccounts(observations) {
+  const sorted = [...observations].sort((a, b) => a.timestampMs - b.timestampMs);
+  const fits = new Map();
+  for (const forward of [true, false]) {
+    const trusted = new Map();
+    for (const item of forward ? sorted : sorted.reverse()) {
+      if (!item.switched) {
+        trusted.set(`${item.accountKey}\0${item.limitId}`, item);
+        continue;
+      }
+      const scores = fits.get(item) || new Map();
+      for (const other of trusted.values()) {
+        if (other.limitId !== item.limitId || !sameWindow(other, item)) continue;
+        const gap = forward ? item.usedPercent - other.usedPercent : other.usedPercent - item.usedPercent;
+        const prior = scores.get(other.accountKey);
+        scores.set(other.accountKey, gap < -1 || prior === Infinity ? Infinity : Math.min(prior ?? Infinity, Math.abs(gap)));
+      }
+      fits.set(item, scores);
+    }
+  }
+  for (const [item, scores] of fits) {
+    if (scores.get(item.accountKey) < Infinity) continue;
+    let best = Infinity;
+    for (const [account, score] of scores) if (score < best) { best = score; item.accountKey = account; }
+  }
+}
+
+function validObservation(item) {
+  return Number.isFinite(item.timestampMs) && Number.isFinite(item.usedPercent) && item.usedPercent >= 0 && item.usedPercent <= 100;
+}
+
 function collapseObservations(observations) {
   const grouped = new Map();
   for (const item of observations) {
-    if (!Number.isFinite(item.timestampMs) || !Number.isFinite(item.usedPercent) || item.usedPercent < 0 || item.usedPercent > 100) continue;
     const key = `${item.accountKey}:${item.limitId}:${Math.floor(item.timestampMs / 1000)}`;
     const existing = grouped.get(key);
     if (!existing || item.timestampMs > existing.timestampMs || (item.timestampMs === existing.timestampMs && item.usedPercent > existing.usedPercent)) grouped.set(key, item);
@@ -608,19 +666,23 @@ function buildLane(events): CostLane {
   return { times, prefix };
 }
 
+function laneKey(accountKey = "local", limitId = "") {
+  return `${accountKey}\0${limitId}`;
+}
+
 export function buildCostLanes(events): CostLanes {
-  const unassigned: any[] = [];
-  const byLimit = new Map();
+  const groups = new Map();
+  const limits = new Set();
   for (const event of events) {
     if (!event.eligible) continue;
-    if (event.quotaLimitId) {
-      const list = byLimit.get(event.quotaLimitId) || [];
-      list.push(event);
-      byLimit.set(event.quotaLimitId, list);
-    } else unassigned.push(event);
+    if (event.quotaLimitId) limits.add(event.quotaLimitId);
+    const key = laneKey(event.accountKey, event.quotaLimitId || "");
+    const list = groups.get(key) || [];
+    list.push(event);
+    groups.set(key, list);
   }
-  const lanes: CostLanes = { unassigned: buildLane(unassigned), byLimit: new Map(), includeUnassigned: byLimit.size <= 1 };
-  for (const [limitId, list] of byLimit) lanes.byLimit.set(limitId, buildLane(list));
+  const lanes: CostLanes = { byKey: new Map(), includeUnassigned: limits.size <= 1 };
+  for (const [key, list] of groups) lanes.byKey.set(key, buildLane(list));
   return lanes;
 }
 
@@ -640,10 +702,12 @@ function costAt(lane: CostLane, timestamp: number) {
   return index < 0 ? 0 : lane.prefix[index + 1];
 }
 
-export function costInWindow(lanes: CostLanes, start: number, end: number, limitId: string) {
-  const tagged = lanes.byLimit.get(limitId) || EMPTY_LANE;
-  const assigned = costAt(tagged, end) - costAt(tagged, start);
-  return lanes.includeUnassigned ? assigned + costAt(lanes.unassigned, end) - costAt(lanes.unassigned, start) : assigned;
+export function costInWindow(lanes: CostLanes, start: number, end: number, limitId: string, accountKey?: string) {
+  const spent = (key) => {
+    const lane = lanes.byKey.get(key) || EMPTY_LANE;
+    return costAt(lane, end) - costAt(lane, start);
+  };
+  return spent(laneKey(accountKey, limitId)) + (lanes.includeUnassigned ? spent(laneKey(accountKey)) : 0);
 }
 
 function isPairedEpoch(epoch) {
@@ -657,9 +721,15 @@ function isNewerGrantEpoch(epoch, active) {
   return epoch.at(-1).timestampMs >= active.epoch.at(-1).timestampMs;
 }
 
-export function estimateGrantFromLogs(events, observations, lanes = buildCostLanes(events)) {
-  const collapsed = collapseObservations(observations);
-  const epochs = splitEpochs(collapsed);
+export function estimateGrantFromLogs(events, observations) {
+  const valid = observations.filter(validObservation);
+  resolveAccounts(valid);
+  for (const event of events) if (event.quota) event.accountKey = event.quota.accountKey;
+  const collapsed = collapseObservations(valid);
+  // Accounts sharing a Codex home have separate grants; report the one used most recently.
+  const account = collapsed.at(-1)?.accountKey;
+  const epochs = splitEpochs(collapsed.filter((item) => item.accountKey === account));
+  const lanes = buildCostLanes(events);
   const pendingLanes = buildCostLanes(events.filter((event) => !event.eligible).map((event) => ({ ...event, eligible: true, costUsd: 1 })));
   pendingLanes.includeUnassigned = lanes.includeUnassigned;
   const series: any[] = [];
@@ -674,16 +744,16 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
   epochs.forEach((epoch, epochIndex) => {
     const first = epoch[0];
     let anchor = first;
-    let anchorCost = costInWindow(lanes, first.timestampMs, anchor.timestampMs, first.limitId);
+    let anchorCost = 0;
     const candidates: any[] = [];
     const timeline: any[] = [];
     let pricingBlockedPairs = 0;
     for (let index = 1; index < epoch.length; index++) {
       const current = epoch[index];
-      const currentCost = costInWindow(lanes, first.timestampMs, current.timestampMs, first.limitId);
+      const currentCost = costInWindow(lanes, first.timestampMs, current.timestampMs, first.limitId, account);
       const costDelta = currentCost - anchorCost;
       const percentDelta = current.usedPercent - anchor.usedPercent;
-      const pending = costInWindow(pendingLanes, anchor.timestampMs, current.timestampMs, first.limitId);
+      const pending = costInWindow(pendingLanes, anchor.timestampMs, current.timestampMs, first.limitId, account);
       let decision = "pending";
       let weekUsd: number | null = null;
       if (pending > 0 && percentDelta >= MIN_PERCENT_DELTA) pricingBlockedPairs += 1;
@@ -745,7 +815,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
       headlineUsd,
       coveragePoints,
       matchedCoveragePoints: matchedPercent,
-      observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId),
+      observedTokenCostUsd: costInWindow(lanes, first.timestampMs, Date.now(), first.limitId, account),
       outlierPairs: candidates.length - inlierRates.length,
       pricingBlockedPairs,
     };
@@ -773,6 +843,7 @@ export function estimateGrantFromLogs(events, observations, lanes = buildCostLan
     pendingModels: [...new Set(events.filter((event) => !event.eligible).map((event) => normalizeModel(event.model) || "unknown"))].sort(),
     resetsAtMs: latest?.resetsAtMs ?? null,
     planType: latest?.planType ?? null,
+    accountsSeen: new Set(collapsed.map((item) => item.accountKey)).size,
     series: bucketSeries(series, MAX_SERIES_POINTS),
   };
 }
@@ -835,8 +906,7 @@ export async function estimateCodexGrant(options: EstimateOptions = {}): Promise
       modelUsage: summarizeModelUsage(events),
     };
   }
-  const lanes = buildCostLanes(events);
-  const report = estimateGrantFromLogs(events, observations, lanes);
+  const report = estimateGrantFromLogs(events, observations);
   const pricingSources = [...new Set(events.filter((event) => event.eligible).map((event) => event.pricingStatus))].sort();
   return {
     ...report,

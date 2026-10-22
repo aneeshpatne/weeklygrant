@@ -138,6 +138,7 @@ test("dashboard fits supported terminal sizes with history and update notices", 
       for (const latestVersion of [null, "1.4.5"]) {
         const state = applyLatestVersion(applyReport(createState("1.4.4"), report({
           confidence,
+          accountsSeen: 2,
           history: { peakUsd: 100, averageUsd: 80, comparableWeeks, vsPeakPercent: -40, vsAveragePercent: -25 },
         })), latestVersion);
         for (const [columns, rows] of [[72, 28], [80, 28], [120, 30], [120, 40]]) {
@@ -148,6 +149,7 @@ test("dashboard fits supported terminal sizes with history and update notices", 
           assert.doesNotMatch(frame, /Expand terminal size/);
           assert.match(frame, /Estimated weekly API/);
           assert.match(frame, /\$42\.00/);
+          assert.match(frame, /latest of 2 accounts/);
           assert.match(frame, /Estimated grant history/);
           assert.match(frame, /Observed spend/);
           assert.match(frame, /rescan/);

@@ -254,7 +254,7 @@ function renderDashboard(state: TuiState, width: number, compact = false) {
   );
   const lines = [
     spaceBetween(
-      style("weeklygrant", { bold: true, color: "cyan" }),
+      style("weeklygrant", { bold: true, color: "cyan" }) + (report.accountsSeen > 1 ? style(` · latest of ${report.accountsSeen} accounts`, { dim: true }) : ""),
       style(`${String(report.confidence).toUpperCase()} confidence`, { color: estimateReady ? "green" : "yellow" }),
       width,
     ),
