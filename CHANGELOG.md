@@ -6,6 +6,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 - Keep quota and cost separate for each account sharing a Codex home, and estimate the most recently used account instead of mixing their streams into one graph.
 - Detect account switches inside a session from its quota stream and move later usage to the account it matches, including after global resets that sync reset times.
+- Raise the packed size budget to 20 KB for account isolation, keeping the 50 KB unpacked limit.
 
 ## 1.4.4
 
